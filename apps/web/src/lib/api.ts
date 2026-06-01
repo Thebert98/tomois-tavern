@@ -37,6 +37,7 @@ export interface PortraitDTO {
   character_id: string;
   image_url: string | null;
   sprite_url: string | null;
+  sprite_frames: string[] | null;
   is_current: boolean;
   prompt: string;
   status: string;

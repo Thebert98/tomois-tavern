@@ -66,17 +66,18 @@ def enabled() -> bool:
 # -- character generation ----------------------------------------------------
 
 # Style hints baked into every character generation so we get a consistent
-# FFVII Pixel Reunion-ish look across all heroes.
+# FFVII Pixel Reunion-ish look across all heroes. Values must match PixelLab's
+# enums exactly — see /v2/openapi.json schemas Outline / Shading / Detail /
+# CameraView / CharacterProportionsPreset.
 _STYLE_HINTS: dict[str, Any] = {
-    "outline": "single color black outline",
-    "shading": "medium shading",
-    "detail": "medium detail",
-    "view": "side",
+    "outline": "single color black outline",   # Outline enum
+    "shading": "medium shading",               # Shading enum
+    "detail": "medium detail",                 # Detail enum
+    "view": "side",                            # CameraView enum
     "isometric": False,
-    "template_id": "mannequin",
+    "template_id": "mannequin",                # humanoid skeleton
     "mode": "standard",
-    "proportions": "chibi",
-    "no_background": True,
+    "proportions": {"type": "preset", "name": "chibi"},
 }
 
 
@@ -94,7 +95,14 @@ async def _create_character(description: str) -> str:
             json=payload,
             headers=_headers(),
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # Surface the validation detail (PixelLab returns FastAPI-style
+            # `detail` arrays) so we can fix payload mistakes from the log.
+            log.error(
+                "PixelLab create-character %s body: %s",
+                resp.status_code, resp.text[:500],
+            )
+            resp.raise_for_status()
         data = resp.json()
     character_id = data.get("character_id") or data.get("id") or data.get("character", {}).get("id")
     if not character_id:
@@ -186,7 +194,12 @@ async def _animate_character(
             json=payload,
             headers=_headers(),
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            log.error(
+                "PixelLab animate-character %s body: %s",
+                resp.status_code, resp.text[:500],
+            )
+            resp.raise_for_status()
         data = resp.json()
     job_id = (
         data.get("job_id")

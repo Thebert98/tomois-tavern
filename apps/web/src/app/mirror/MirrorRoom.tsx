@@ -102,7 +102,11 @@ export function MirrorRoom() {
     [gallery],
   );
 
-  const display = inFlight && inFlight.stage !== "ready" ? inFlight : current;
+  // Once the pipeline is live, always show the in-flight portrait — even
+  // after it hits "ready", until the user generates a new one or picks an
+  // active portrait from the gallery. Otherwise the mirror goes blank the
+  // moment the row finishes.
+  const display = inFlight ?? current;
   const isPipelineLive =
     !!inFlight && inFlight.stage !== "ready" && inFlight.stage !== "failed";
 

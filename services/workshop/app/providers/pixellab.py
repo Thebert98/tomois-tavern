@@ -81,8 +81,10 @@ _STYLE_HINTS: dict[str, Any] = {
 }
 
 
-async def _create_character(description: str) -> str:
-    """Submit a character generation job. Returns character_id immediately."""
+async def _create_character(description: str) -> tuple[str, Optional[str]]:
+    """Submit a character generation job. Returns (character_id, job_id).
+    The job_id is the authoritative completion signal — rotation_urls show up
+    in the character row before the actual image files exist on the CDN."""
     payload: dict[str, Any] = {
         "description": description,
         "image_size": {"width": settings.sprite_size, "height": settings.sprite_size},
@@ -96,8 +98,6 @@ async def _create_character(description: str) -> str:
             headers=_headers(),
         )
         if resp.status_code >= 400:
-            # Surface the validation detail (PixelLab returns FastAPI-style
-            # `detail` arrays) so we can fix payload mistakes from the log.
             log.error(
                 "PixelLab create-character %s body: %s",
                 resp.status_code, resp.text[:500],
@@ -105,9 +105,10 @@ async def _create_character(description: str) -> str:
             resp.raise_for_status()
         data = resp.json()
     character_id = data.get("character_id") or data.get("id") or data.get("character", {}).get("id")
+    job_id = data.get("background_job_id") or data.get("job_id")
     if not character_id:
         raise RuntimeError(f"create-character returned no id: keys={list(data)}")
-    return character_id
+    return character_id, job_id
 
 
 async def _get_character(character_id: str) -> dict[str, Any]:
@@ -165,9 +166,15 @@ async def generate_character_sprite(description: str) -> Optional[CharacterResul
     sprites are disabled at the config level."""
     if not enabled():
         return None
-    character_id = await _create_character(description)
-    log.info("PixelLab character queued: %s", character_id)
-    info = await _wait_for_character(character_id)
+    character_id, job_id = await _create_character(description)
+    log.info("PixelLab character queued: char=%s job=%s", character_id, job_id)
+    # Authoritative completion: wait for the background job, not the character
+    # row (which gets rotation_urls populated *before* the image files exist).
+    if job_id:
+        await _wait_for_job(job_id, max_seconds=600, interval_seconds=6.0)
+    # Fall back to the rotation-URL polling if no job_id was returned (older
+    # responses) — better than nothing.
+    info = await _wait_for_character(character_id, max_seconds=120, interval_seconds=4.0)
     rotations = _extract_rotation_urls(info)
     south = rotations.get("south") or next(iter(rotations.values()), None)
     return CharacterResult(

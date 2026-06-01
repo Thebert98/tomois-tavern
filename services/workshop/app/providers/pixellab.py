@@ -1,14 +1,14 @@
-"""PixelLab — generate a JRPG-style pixel sprite that resembles a reference portrait.
+"""PixelLab — generate a JRPG-style pixel sprite from a text description.
 
-PixelLab's `generate-image-pixflux` endpoint takes a text description plus an
-optional reference image, and returns a true low-res pixel art sprite with a
-quantized palette. Image conditioning is what keeps the sprite resembling the
-character in the Flux-painted portrait.
+PixelLab's `generate-image-pixflux` produces true low-res pixel art with a
+quantized palette. We *don't* hand it the Flux portrait as an init_image:
+PixelLab's init_image biases starting noise, not subject identity, so the
+text prompt (race, class, equipment) is what makes the sprite recognizably
+the same character.
 
-Optional: if `pixellab_api_key` is unset, `generate_sprite` returns None and the
-caller skips sprite generation entirely.
+Optional: if `pixellab_api_key` is unset, `generate_sprite` returns None and
+the caller skips sprite generation entirely.
 """
-import base64
 from dataclasses import dataclass
 from typing import Optional
 
@@ -33,19 +33,7 @@ def enabled() -> bool:
     return settings.sprites_enabled and bool(settings.pixellab_api_key)
 
 
-async def _fetch_reference_b64(reference_url: str) -> str:
-    """PixelLab accepts base64 reference images; mirror our portrait into that
-    shape rather than handing them a (potentially-expiring) signed URL."""
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        resp = await client.get(reference_url)
-        resp.raise_for_status()
-        return base64.b64encode(resp.content).decode("ascii")
-
-
-async def generate_sprite(
-    description: str,
-    reference_image_url: Optional[str] = None,
-) -> Optional[SpriteResult]:
+async def generate_sprite(description: str) -> Optional[SpriteResult]:
     """Generate a JRPG-style sprite. Returns None when the integration is
     disabled (no key) so callers can no-op gracefully."""
     if not enabled():
@@ -60,14 +48,6 @@ async def generate_sprite(
         "style": "pixel art",
         "view": "side",
     }
-    if reference_image_url:
-        payload["init_image"] = {
-            "type": "base64",
-            "base64": await _fetch_reference_b64(reference_image_url),
-        }
-        # 50-70 keeps subject identity from the reference while letting the
-        # model commit to a clean pixel grid.
-        payload["init_image_strength"] = 60
 
     headers = {
         "Authorization": f"Bearer {settings.pixellab_api_key}",

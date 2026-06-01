@@ -16,35 +16,13 @@ const STAGES: { key: PortraitStage; label: string; flavor: string }[] = [
     flavor: "Strokes of light and shadow fall on the canvas.",
   },
   {
-    key: "describing",
-    label: "Studying",
-    flavor: "An apprentice peers at the painting and takes notes.",
-  },
-  {
-    key: "sculpting",
-    label: "Sculpting",
-    flavor: "The pixel-smith carves the hero, one direction at a time.",
-  },
-  {
-    key: "animating",
-    label: "Animating",
-    flavor: "Breath enters the sprite — frame by frame.",
-  },
-  {
     key: "ready",
     label: "Ready",
     flavor: "Admire your work.",
   },
 ];
 
-const ORDER: PortraitStage[] = [
-  "queued",
-  "painting",
-  "describing",
-  "sculpting",
-  "animating",
-  "ready",
-];
+const ORDER: PortraitStage[] = ["queued", "painting", "ready"];
 
 export function PortraitProgress({
   stage,
@@ -81,7 +59,9 @@ export function PortraitProgress({
         />
       </div>
       <p className="text-xs italic text-tavern-parchment/55">
-        {failed ? "Speak the words again — the mirror tires sometimes." : current.flavor}
+        {failed
+          ? "Speak the words again — the mirror tires sometimes."
+          : current.flavor}
       </p>
     </div>
   );

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, AlertTriangle, Wand2, Check } from "lucide-react";
 import { reroll, workshop, type PortraitDTO } from "@/lib/api";
-import { SpriteAnim } from "@/components/SpriteAnim";
 import { PortraitProgress } from "@/components/PortraitProgress";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
@@ -155,9 +154,6 @@ export function MirrorRoom() {
             />
           </div>
         )}
-        {inFlight?.sprite_url && (
-          <SpritePreview portrait={inFlight} />
-        )}
       </section>
 
       <section className="flex flex-col gap-6">
@@ -275,25 +271,6 @@ function MirrorFrame({
           )}
         </AnimatePresence>
       </div>
-    </div>
-  );
-}
-
-function SpritePreview({ portrait }: { portrait: PortraitDTO }) {
-  if (!portrait.sprite_url) return null;
-  const animated = portrait.sprite_frames && portrait.sprite_frames.length > 1;
-  return (
-    <div className="mx-auto mt-6 max-w-xs text-center">
-      <div className="mb-2 font-heading text-xs uppercase tracking-[0.3em] text-tavern-gold/70">
-        Party sprite{animated ? " · hover to animate" : ""}
-      </div>
-      <SpriteAnim
-        frames={portrait.sprite_frames}
-        still={portrait.sprite_url}
-        mode="on-hover"
-        className="mx-auto w-32 rounded border border-tavern-stone/40 bg-tavern-night/60 p-2"
-        alt="Pixel sprite"
-      />
     </div>
   );
 }

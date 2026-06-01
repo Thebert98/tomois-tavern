@@ -35,9 +35,6 @@ async function asJson<T>(res: Response): Promise<T> {
 export type PortraitStage =
   | "queued"
   | "painting"
-  | "describing"
-  | "sculpting"
-  | "animating"
   | "ready"
   | "failed";
 
@@ -45,8 +42,6 @@ export interface PortraitDTO {
   id: string;
   character_id: string;
   image_url: string | null;
-  sprite_url: string | null;
-  sprite_frames: string[] | null;
   is_current: boolean;
   prompt: string;
   status: string;

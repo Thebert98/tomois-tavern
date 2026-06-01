@@ -20,14 +20,28 @@ async def _download(url: str) -> bytes:
 
 async def persist_image(user_id: str, source_url: str, suggested_name: str) -> str:
     blob = await _download(source_url)
+    return _persist_bytes(user_id, blob, suggested_name, "image/jpeg",
+                          settings.portrait_bucket)
+
+
+def persist_image_bytes(
+    user_id: str, blob: bytes, suggested_name: str, content_type: str = "image/png"
+) -> str:
+    return _persist_bytes(user_id, blob, suggested_name, content_type,
+                          settings.portrait_bucket)
+
+
+def _persist_bytes(
+    user_id: str, blob: bytes, suggested_name: str, content_type: str, bucket: str
+) -> str:
     path = f"{user_id}/{suggested_name}"
     sb = service_client()
-    sb.storage.from_(settings.portrait_bucket).upload(
+    sb.storage.from_(bucket).upload(
         path=path,
         file=blob,
-        file_options={"content-type": "image/jpeg", "upsert": "true"},
+        file_options={"content-type": content_type, "upsert": "true"},
     )
-    return _public_url(settings.portrait_bucket, path)
+    return _public_url(bucket, path)
 
 
 async def persist_audio(user_id: str, source_url: str, suggested_name: str) -> str:

@@ -1,5 +1,5 @@
 """Magic Mirror — character portraits + matching pixel sprites via fal.ai."""
-import asyncio
+import base64
 import logging
 import traceback
 from typing import Optional, Any
@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from ..auth import CurrentUser, get_current_user
 from ..db import user_client
 from ..providers import fal as fal_provider
+from ..providers import pixellab as pixellab_provider
 from ..providers import storage
 
 router = APIRouter(prefix="/portraits", tags=["mirror"])
@@ -58,35 +59,40 @@ async def create_portrait(
         )
         portrait_id = pending.data[0]["id"]
 
-        # Generate the portrait and the matching sprite in parallel — two calls
-        # to the same model, so doing them serially would double the wait.
-        portrait_task = fal_provider.generate_portrait(
+        # Always paint the portrait via Flux.
+        portrait_result = await fal_provider.generate_portrait(
             prompt=body.prompt, aspect_ratio=body.aspect_ratio
         )
-        sprite_task = fal_provider.generate_sprite(prompt=body.prompt)
-        portrait_result, sprite_result = await asyncio.gather(portrait_task, sprite_task)
-
-        # Persist both into Supabase Storage so we control retention.
-        image_url, sprite_url = await asyncio.gather(
-            storage.persist_image(
-                user_id=user.id,
-                source_url=portrait_result.image_url,
-                suggested_name=f"portrait-{portrait_id}.jpg",
-            ),
-            storage.persist_image(
-                user_id=user.id,
-                source_url=sprite_result.image_url,
-                suggested_name=f"sprite-{portrait_id}.jpg",
-            ),
+        image_url = await storage.persist_image(
+            user_id=user.id,
+            source_url=portrait_result.image_url,
+            suggested_name=f"portrait-{portrait_id}.jpg",
         )
 
+        # Sprite is optional — only run when PixelLab is configured. We
+        # condition the sprite on the portrait we just painted so the
+        # sprite resembles the same character.
+        sprite_url: Optional[str] = None
+        sprite_cost: float = 0.0
+        sprite_result = await pixellab_provider.generate_sprite(
+            description=body.prompt, reference_image_url=image_url
+        )
+        if sprite_result is not None:
+            sprite_url = storage.persist_image_bytes(
+                user_id=user.id,
+                blob=base64.b64decode(sprite_result.image_b64),
+                suggested_name=f"sprite-{portrait_id}.png",
+                content_type="image/png",
+            )
+            sprite_cost = sprite_result.cost_usd or 0
+
+        total_cost = (portrait_result.cost_usd or 0) + sprite_cost
         db.table("portraits").update(
             {
                 "image_url": image_url,
                 "sprite_url": sprite_url,
                 "status": "ready",
-                "cost_usd": (portrait_result.cost_usd or 0)
-                + (sprite_result.cost_usd or 0),
+                "cost_usd": total_cost,
             }
         ).eq("id", portrait_id).execute()
 
@@ -99,7 +105,7 @@ async def create_portrait(
             status="ready",
             prompt=body.prompt,
             model="fal-ai/flux-pro/v1.1-ultra",
-            cost_usd=(portrait_result.cost_usd or 0) + (sprite_result.cost_usd or 0),
+            cost_usd=total_cost,
         )
     except Exception as exc:
         log.error("Portrait generation failed:\n%s", traceback.format_exc())

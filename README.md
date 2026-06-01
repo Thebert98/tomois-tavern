@@ -36,7 +36,8 @@ ReRoll keeps its own repository and Railway deploy. The tavern's web app calls R
 | Animation   | Framer Motion · Howler.js for ambient audio         |
 | Workshop    | FastAPI + Pydantic                                  |
 | Auth + DB   | Supabase (shared with ReRoll: pgvector, RLS, Auth)  |
-| Image gen   | fal.ai · Flux 1.1 Pro                               |
+| Image gen   | fal.ai · Flux 1.1 Pro (portraits, always on)        |
+| Sprite gen  | PixelLab · pixflux (JRPG sprites, OPTIONAL)         |
 | Music gen   | Suno (via reseller, e.g. sunoapi.com)               |
 | Lyrics      | Anthropic Claude Sonnet 4.6                         |
 | Storage     | Supabase Storage (portraits, songs)                 |
@@ -68,6 +69,20 @@ uvicorn app.main:app --reload --port 8001
 ```bash
 pnpm dev   # runs apps/web on :3000
 ```
+
+## Optional features
+
+### Sprites (Magic Mirror)
+Portraits always work. Sprites are an optional second pass through PixelLab —
+forks that don't want a PixelLab account can leave this off. To enable:
+
+```bash
+SPRITES_ENABLED=true
+PIXELLAB_API_KEY=pl-...   # https://pixellab.ai
+```
+
+When off, the mirror generates the portrait only, the sprite preview hides,
+and the party screen falls back to portrait avatars.
 
 ## Deployment
 

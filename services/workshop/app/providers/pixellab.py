@@ -1,148 +1,257 @@
-"""PixelLab — convert a generated portrait into a JRPG-style pixel art sprite,
-then animate it into an idle loop.
+"""PixelLab v2 — full character sprite generation + animation.
 
-We use v2 endpoints. `/v2/image-to-pixelart` is direct img2img: it takes the
-Flux portrait we already painted and returns a pixel-art version with palette
-quantization. Subject identity is preserved exactly because the input *is*
-the character, no prompt-laundering through a vision model.
+Pipeline target: FFVII Pixel Reunion-style chibi sprites with multiple
+directions, animated into an idle cycle. Each step is an async PixelLab job
+we poll until completion.
 
-Optional: if `pixellab_api_key` is unset or `sprites_enabled` is false,
-`generate_sprite_from_image` and `animate_sprite` return None so callers can
-no-op gracefully.
+Endpoints used:
+  POST /v2/create-character-with-8-directions  →  character_id (background)
+  GET  /v2/characters/{character_id}           →  rotation URLs
+  POST /v2/animate-character                   →  job_id (background)
+  GET  /v2/background-jobs/{job_id}            →  animation frames
+
+The /image-to-pixelart endpoint we used earlier is the wrong tool for this
+job — it converts ANY image to "pixel art style" but preserves composition,
+so a head-and-shoulders portrait gives back a head-and-shoulders sprite.
+For real game sprites we need a generator that *makes characters*, which is
+what create-character-with-8-directions does.
 """
-import base64
+import asyncio
+import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
 from ..config import settings
 
+log = logging.getLogger("workshop.pixellab")
+
 
 @dataclass
-class SpriteResult:
-    image_b64: str       # PNG, base64 (no data URL prefix)
+class CharacterResult:
+    character_id: str
+    south_image_url: Optional[str]   # the "front" pose used for portraits/gallery
+    rotation_urls: dict[str, str]    # direction → image url
     cost_usd: Optional[float]
 
 
 @dataclass
-class AnimationResult:
-    frames_b64: list[str]   # each frame base64 PNG (no data URL prefix)
+class AnimationFramesResult:
+    frame_urls: list[str]            # direct CDN URLs (no base64)
     cost_usd: Optional[float]
+
+
+# -- helpers -----------------------------------------------------------------
+
+def _v2_url(path: str) -> str:
+    """Build a v2 endpoint URL regardless of which version the user set."""
+    base = settings.pixellab_base_url.rstrip("/")
+    if base.endswith("/v1") or base.endswith("/v2"):
+        base = base.rsplit("/", 1)[0]
+    return f"{base}/v2{path}"
+
+
+def _headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {settings.pixellab_api_key}",
+        "Content-Type": "application/json",
+    }
 
 
 def enabled() -> bool:
     return settings.sprites_enabled and bool(settings.pixellab_api_key)
 
 
-def _strip_data_url(b64: str) -> str:
-    """PixelLab sometimes returns data URLs (`data:image/png;base64,...`);
-    strip the prefix so callers can decode cleanly."""
-    if "," in b64 and b64.startswith("data:"):
-        return b64.split(",", 1)[1]
-    return b64
+# -- character generation ----------------------------------------------------
+
+# Style hints baked into every character generation so we get a consistent
+# FFVII Pixel Reunion-ish look across all heroes.
+_STYLE_HINTS: dict[str, Any] = {
+    "outline": "single color black outline",
+    "shading": "medium shading",
+    "detail": "medium detail",
+    "view": "side",
+    "isometric": False,
+    "template_id": "mannequin",
+    "mode": "standard",
+    "proportions": "chibi",
+    "no_background": True,
+}
 
 
-async def _fetch_b64(url: str) -> str:
-    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return base64.b64encode(resp.content).decode("ascii")
-
-
-async def generate_sprite_from_image(
-    portrait_url: str,
-    input_size: int = 512,
-) -> Optional[SpriteResult]:
-    """Convert the just-painted portrait into a pixel-art sprite via
-    /v2/image-to-pixelart. Identity is preserved by direct img2img."""
-    if not enabled():
-        return None
-
-    portrait_b64 = await _fetch_b64(portrait_url)
-    payload = {
-        "image": {"type": "base64", "base64": portrait_b64, "format": "png"},
-        "image_size": {"width": input_size, "height": input_size},
-        "output_size": {"width": settings.sprite_size, "height": settings.sprite_size},
-        "text_guidance_scale": 8.0,
-    }
-    headers = {
-        "Authorization": f"Bearer {settings.pixellab_api_key}",
-        "Content-Type": "application/json",
-    }
-    timeout = httpx.Timeout(connect=15, read=180, write=60, pool=15)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(
-            f"{settings.pixellab_base_url.replace('/v1','/v2')}/image-to-pixelart",
-            json=payload,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-    img = data.get("image") or {}
-    b64 = img.get("base64") or data.get("image_base64")
-    if not b64:
-        raise RuntimeError(
-            f"Unexpected image-to-pixelart response shape: keys={list(data)}"
-        )
-    return SpriteResult(image_b64=_strip_data_url(b64), cost_usd=0.05)
-
-
-async def animate_sprite(
-    sprite_image_b64: str,
-    description: str,
-    n_frames: Optional[int] = None,
-) -> Optional[AnimationResult]:
-    """Animate the static sprite into a short idle loop via
-    /v2/animate-with-text-v3 (newer animation endpoint)."""
-    if not enabled():
-        return None
-    n = n_frames or settings.sprite_animation_frames
-
-    payload = {
-        "image": {"type": "base64", "base64": sprite_image_b64, "format": "png"},
+async def _create_character(description: str) -> str:
+    """Submit a character generation job. Returns character_id immediately."""
+    payload: dict[str, Any] = {
+        "description": description,
         "image_size": {"width": settings.sprite_size, "height": settings.sprite_size},
-        "text_prompt": (
-            f"{description}. Subtle idle breathing animation — gentle vertical "
-            "bob, slight shoulder rise and fall, eyes blinking once. Looping."
-        ),
-        "n_frames": n,
-        "view": "side",
-        "action": "idle",
-        "direction": "east",
+        **_STYLE_HINTS,
     }
-    headers = {
-        "Authorization": f"Bearer {settings.pixellab_api_key}",
-        "Content-Type": "application/json",
-    }
-    timeout = httpx.Timeout(connect=15, read=240, write=60, pool=15)
+    timeout = httpx.Timeout(connect=15, read=60, write=60, pool=15)
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(
-            f"{settings.pixellab_base_url.replace('/v1','/v2')}/animate-with-text-v3",
+            _v2_url("/create-character-with-8-directions"),
             json=payload,
-            headers=headers,
+            headers=_headers(),
         )
         resp.raise_for_status()
         data = resp.json()
+    character_id = data.get("character_id") or data.get("id") or data.get("character", {}).get("id")
+    if not character_id:
+        raise RuntimeError(f"create-character returned no id: keys={list(data)}")
+    return character_id
 
-    # Defensive — PixelLab may return frames under different keys.
-    frames: list[str] = []
-    if isinstance(data.get("images"), list):
-        for f in data["images"]:
-            if isinstance(f, dict) and "base64" in f:
-                frames.append(_strip_data_url(f["base64"]))
-            elif isinstance(f, str):
-                frames.append(_strip_data_url(f))
-    elif isinstance(data.get("frames"), list):
-        for f in data["frames"]:
-            if isinstance(f, dict) and "base64" in f:
-                frames.append(_strip_data_url(f["base64"]))
-            elif isinstance(f, str):
-                frames.append(_strip_data_url(f))
-    frames = [f for f in frames if f]
-    if not frames:
-        raise RuntimeError(
-            f"Unexpected animate-with-text-v3 response: keys={list(data)}"
+
+async def _get_character(character_id: str) -> dict[str, Any]:
+    timeout = httpx.Timeout(connect=15, read=30, write=30, pool=15)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.get(
+            _v2_url(f"/characters/{character_id}"),
+            headers=_headers(),
         )
-    return AnimationResult(frames_b64=frames, cost_usd=0.15)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _wait_for_character(
+    character_id: str, max_seconds: int = 600, interval_seconds: float = 6.0
+) -> dict[str, Any]:
+    """Poll the character until status is completed/failed or timeout hits."""
+    waited = 0.0
+    while waited < max_seconds:
+        info = await _get_character(character_id)
+        status = (info.get("status") or "").lower()
+        if status in ("completed", "ready", "done"):
+            return info
+        if status in ("failed", "error"):
+            raise RuntimeError(f"PixelLab character {character_id} failed: {info}")
+        await asyncio.sleep(interval_seconds)
+        waited += interval_seconds
+    raise TimeoutError(f"PixelLab character {character_id} did not finish in {max_seconds}s")
+
+
+def _extract_rotation_urls(info: dict[str, Any]) -> dict[str, str]:
+    """The character payload exposes rotations under a few possible shapes
+    across PixelLab's docs — be defensive."""
+    rotations = info.get("rotations") or info.get("rotation_urls") or info.get("images") or {}
+    if isinstance(rotations, dict):
+        return {k: v if isinstance(v, str) else v.get("url", "") for k, v in rotations.items()}
+    if isinstance(rotations, list):
+        # Fallback: list of {direction, url}
+        out: dict[str, str] = {}
+        for r in rotations:
+            if isinstance(r, dict):
+                d = r.get("direction") or r.get("name")
+                u = r.get("url") or r.get("image_url")
+                if d and u:
+                    out[d] = u
+        return out
+    return {}
+
+
+async def generate_character_sprite(description: str) -> Optional[CharacterResult]:
+    """Create + wait for an 8-direction character sprite. Returns None if
+    sprites are disabled at the config level."""
+    if not enabled():
+        return None
+    character_id = await _create_character(description)
+    log.info("PixelLab character queued: %s", character_id)
+    info = await _wait_for_character(character_id)
+    rotations = _extract_rotation_urls(info)
+    south = rotations.get("south") or next(iter(rotations.values()), None)
+    return CharacterResult(
+        character_id=character_id,
+        south_image_url=south,
+        rotation_urls=rotations,
+        cost_usd=0.40,
+    )
+
+
+# -- animation ---------------------------------------------------------------
+
+async def _animate_character(
+    character_id: str, template_animation_id: str = "idle"
+) -> str:
+    """Kick off an animation job; returns job_id."""
+    payload: dict[str, Any] = {
+        "character_id": character_id,
+        "mode": "template",
+        "template_animation_id": template_animation_id,
+        "directions": ["south"],
+    }
+    timeout = httpx.Timeout(connect=15, read=60, write=60, pool=15)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(
+            _v2_url("/animate-character"),
+            json=payload,
+            headers=_headers(),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    job_id = (
+        data.get("job_id")
+        or data.get("id")
+        or (data.get("jobs", [{}])[0].get("id") if isinstance(data.get("jobs"), list) else None)
+    )
+    if not job_id:
+        raise RuntimeError(f"animate-character returned no job id: keys={list(data)}")
+    return job_id
+
+
+async def _get_job(job_id: str) -> dict[str, Any]:
+    timeout = httpx.Timeout(connect=15, read=30, write=30, pool=15)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.get(
+            _v2_url(f"/background-jobs/{job_id}"),
+            headers=_headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _wait_for_job(
+    job_id: str, max_seconds: int = 600, interval_seconds: float = 6.0
+) -> dict[str, Any]:
+    waited = 0.0
+    while waited < max_seconds:
+        info = await _get_job(job_id)
+        status = (info.get("status") or "").lower()
+        if status in ("completed", "done", "ready"):
+            return info
+        if status in ("failed", "error"):
+            raise RuntimeError(f"PixelLab job {job_id} failed: {info}")
+        await asyncio.sleep(interval_seconds)
+        waited += interval_seconds
+    raise TimeoutError(f"PixelLab job {job_id} did not finish in {max_seconds}s")
+
+
+def _extract_frame_urls(job: dict[str, Any]) -> list[str]:
+    """Be tolerant of result shape — frames may live at several paths."""
+    result = job.get("result") or job
+    for key in ("frames", "animation_frames", "images", "urls"):
+        frames = result.get(key)
+        if isinstance(frames, list) and frames:
+            out: list[str] = []
+            for f in frames:
+                if isinstance(f, str):
+                    out.append(f)
+                elif isinstance(f, dict):
+                    u = f.get("url") or f.get("image_url") or f.get("image", {}).get("url")
+                    if u:
+                        out.append(u)
+            if out:
+                return out
+    return []
+
+
+async def animate_character_idle(character_id: str) -> Optional[AnimationFramesResult]:
+    """Animate the character on PixelLab's `idle` template; returns frame URLs."""
+    if not enabled():
+        return None
+    job_id = await _animate_character(character_id, template_animation_id="idle")
+    log.info("PixelLab animation queued: %s (character=%s)", job_id, character_id)
+    job = await _wait_for_job(job_id)
+    frames = _extract_frame_urls(job)
+    if not frames:
+        raise RuntimeError(f"animate-character returned no frames: {job.keys()}")
+    return AnimationFramesResult(frame_urls=frames, cost_usd=0.30)

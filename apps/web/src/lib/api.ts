@@ -35,6 +35,7 @@ async function asJson<T>(res: Response): Promise<T> {
 export type PortraitStage =
   | "queued"
   | "painting"
+  | "describing"
   | "sculpting"
   | "animating"
   | "ready"

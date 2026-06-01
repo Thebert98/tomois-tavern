@@ -1,19 +1,19 @@
-"""Magic Mirror — async portrait + sprite + idle-animation pipeline.
+"""Magic Mirror — async pipeline: portrait → vision description → character
+sprite → idle animation.
 
-POST /portraits returns immediately with a portrait_id; the heavy work runs in
-a background task that updates the row stage-by-stage. The frontend subscribes
-to the row over Supabase Realtime and shows a progress bar.
+POST returns immediately; the work runs in a FastAPI BackgroundTask that
+updates the row stage-by-stage. The frontend subscribes via Supabase
+Realtime and renders a progress bar.
 
-Stages (in order):
-  queued      — row just inserted
-  painting    — calling Flux 1.1 Pro
-  sculpting   — converting portrait → pixel art via PixelLab image-to-pixelart
-  animating   — generating idle frames via PixelLab animate-with-text-v3
-  ready       — done; image/sprite/frames all persisted
-  failed      — unrecoverable error (sprite/animation failures don't reach
-                here — they degrade gracefully)
+Stages:
+  queued      — row inserted
+  painting    — Flux is painting the portrait
+  describing  — Claude Vision is summarizing the portrait
+  sculpting   — PixelLab is generating the character sprite (8 directions)
+  animating   — PixelLab is generating idle frames
+  ready       — all done
+  failed      — portrait failed (sprite/animation failures degrade gracefully)
 """
-import base64
 import logging
 import traceback
 from typing import Any, Optional
@@ -26,6 +26,7 @@ from ..db import service_client, user_client
 from ..providers import fal as fal_provider
 from ..providers import pixellab as pixellab_provider
 from ..providers import storage
+from ..providers import vision as vision_provider
 
 router = APIRouter(prefix="/portraits", tags=["mirror"])
 log = logging.getLogger("workshop.mirror")
@@ -60,8 +61,6 @@ async def _run_pipeline(
     prompt: str,
     aspect_ratio: str,
 ) -> None:
-    """Multi-stage portrait pipeline. Uses the service-role client so it
-    doesn't depend on the user's JWT outliving the original request."""
     db = service_client()
 
     def _patch(**fields: Any) -> None:
@@ -72,7 +71,7 @@ async def _run_pipeline(
     sprite_frames: Optional[list[str]] = None
     total_cost = 0.0
 
-    # 1. Portrait — must succeed.
+    # 1. PORTRAIT (must succeed)
     try:
         _patch(stage="painting")
         portrait_result = await fal_provider.generate_portrait(
@@ -90,49 +89,58 @@ async def _run_pipeline(
         _patch(status="failed", stage="failed")
         return
 
-    # 2. Sprite — optional, best-effort.
+    # If sprites are off, we're done — give the user their portrait.
+    if not pixellab_provider.enabled():
+        _patch(status="ready", stage="ready", cost_usd=total_cost)
+        return
+
+    # 2. VISION DESCRIPTION (sprite-ready summary of the portrait)
+    sprite_description = prompt
+    try:
+        _patch(stage="describing")
+        sprite_description = await vision_provider.describe_for_sprite(image_url)
+    except Exception as exc:
+        log.warning("Vision step failed (falling back to original prompt): %s", exc)
+
+    # 3. CHARACTER SPRITE (PixelLab create-character-with-8-directions, async)
+    pixellab_character_id: Optional[str] = None
     try:
         _patch(stage="sculpting")
-        sprite_result = await pixellab_provider.generate_sprite_from_image(
-            portrait_url=image_url
+        character_result = await pixellab_provider.generate_character_sprite(
+            description=sprite_description
         )
-        if sprite_result is not None:
-            sprite_url = storage.persist_image_bytes(
+        if character_result is not None and character_result.south_image_url:
+            sprite_url = await storage.persist_image(
                 user_id=user_id,
-                blob=base64.b64decode(sprite_result.image_b64),
+                source_url=character_result.south_image_url,
                 suggested_name=f"sprite-{portrait_id}.png",
-                content_type="image/png",
             )
-            total_cost += sprite_result.cost_usd or 0
+            pixellab_character_id = character_result.character_id
+            total_cost += character_result.cost_usd or 0
             _patch(sprite_url=sprite_url)
     except Exception as exc:
-        log.warning("Sprite sculpting failed (continuing): %s", exc)
-        sprite_result = None
+        log.warning("Sprite sculpting failed (continuing without sprite): %s", exc)
+        character_result = None
 
-    # 3. Animation — optional, best-effort, requires a successful sprite.
-    if sprite_result is not None:
+    # 4. IDLE ANIMATION (only if sprite succeeded)
+    if pixellab_character_id:
         try:
             _patch(stage="animating")
-            anim = await pixellab_provider.animate_sprite(
-                sprite_image_b64=sprite_result.image_b64,
-                description=prompt,
-            )
-            if anim is not None:
+            anim = await pixellab_provider.animate_character_idle(pixellab_character_id)
+            if anim is not None and anim.frame_urls:
                 frame_urls: list[str] = []
-                for idx, frame_b64 in enumerate(anim.frames_b64):
-                    frame_url = storage.persist_image_bytes(
+                for idx, frame_url in enumerate(anim.frame_urls):
+                    persisted = await storage.persist_image(
                         user_id=user_id,
-                        blob=base64.b64decode(frame_b64),
+                        source_url=frame_url,
                         suggested_name=f"sprite-{portrait_id}-frame-{idx}.png",
-                        content_type="image/png",
                     )
-                    frame_urls.append(frame_url)
+                    frame_urls.append(persisted)
                 sprite_frames = frame_urls
                 total_cost += anim.cost_usd or 0
         except Exception as exc:
-            log.warning("Sprite animation failed (continuing): %s", exc)
+            log.warning("Sprite animation failed (continuing without frames): %s", exc)
 
-    # 4. Done.
     _patch(
         sprite_frames=sprite_frames,
         cost_usd=total_cost,
@@ -150,9 +158,7 @@ def create_portrait(
     background: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Insert a queued row, return immediately, and kick off the pipeline."""
     db = user_client(user.token)
-
     pending = (
         db.table("portraits")
         .insert(
@@ -174,8 +180,6 @@ def create_portrait(
         )
     portrait_id = pending.data[0]["id"]
 
-    # BackgroundTasks awaits async callables after the response is sent —
-    # the client never waits on this.
     background.add_task(
         _run_pipeline, portrait_id, user.id, body.prompt, body.aspect_ratio
     )
@@ -222,7 +226,6 @@ def set_current_portrait(
             status.HTTP_400_BAD_REQUEST,
             "Portrait is not linked to a character.",
         )
-
     db.table("portraits").update({"is_current": False}).eq(
         "character_id", character_id
     ).eq("is_current", True).execute()

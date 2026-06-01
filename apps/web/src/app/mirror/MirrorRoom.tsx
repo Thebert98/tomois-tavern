@@ -2,10 +2,28 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, AlertTriangle, Wand2, Check } from "lucide-react";
+import {
+  Sparkles,
+  AlertTriangle,
+  Wand2,
+  Check,
+  Trash2,
+  UserPlus,
+} from "lucide-react";
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  Label,
+  Skeleton,
+  Textarea,
+  useToast,
+} from "@tomois/ui";
 import { reroll, workshop, type PortraitDTO } from "@/lib/api";
 import { PortraitProgress } from "@/components/PortraitProgress";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { playSfx } from "@/lib/sfx";
 
 interface Character {
   id: string;
@@ -24,13 +42,15 @@ function characterFlavor(sheet: Record<string, unknown>): string {
 }
 
 export function MirrorRoom() {
+  const { toast } = useToast();
   const [characters, setCharacters] = useState<Character[] | null>(null);
   const [chosen, setChosen] = useState<Character | null>(null);
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [inFlight, setInFlight] = useState<PortraitDTO | null>(null);
-  const [allPortraits, setAllPortraits] = useState<PortraitDTO[]>([]);
+  const [allPortraits, setAllPortraits] = useState<PortraitDTO[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<PortraitDTO | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +81,6 @@ export function MirrorRoom() {
     );
   }, [chosen]);
 
-  // Subscribe to row updates for the in-flight portrait.
   useEffect(() => {
     if (!inFlight) return;
     const sb = supabaseBrowser();
@@ -79,11 +98,15 @@ export function MirrorRoom() {
           const next = payload.new as PortraitDTO;
           setInFlight(next);
           setAllPortraits((list) => {
-            const exists = list.some((p) => p.id === next.id);
+            const base = list ?? [];
+            const exists = base.some((p) => p.id === next.id);
             return exists
-              ? list.map((p) => (p.id === next.id ? next : p))
-              : [next, ...list];
+              ? base.map((p) => (p.id === next.id ? next : p))
+              : [next, ...base];
           });
+          if (next.stage === "ready") {
+            void playSfx("chime");
+          }
         },
       )
       .subscribe();
@@ -93,7 +116,10 @@ export function MirrorRoom() {
   }, [inFlight?.id]);
 
   const gallery = useMemo(
-    () => (chosen ? allPortraits.filter((p) => p.character_id === chosen.id) : []),
+    () =>
+      chosen && allPortraits
+        ? allPortraits.filter((p) => p.character_id === chosen.id)
+        : [],
     [allPortraits, chosen],
   );
   const current = useMemo(
@@ -101,10 +127,6 @@ export function MirrorRoom() {
     [gallery],
   );
 
-  // Once the pipeline is live, always show the in-flight portrait — even
-  // after it hits "ready", until the user generates a new one or picks an
-  // active portrait from the gallery. Otherwise the mirror goes blank the
-  // moment the row finishes.
   const display = inFlight ?? current;
   const isPipelineLive =
     !!inFlight && inFlight.stage !== "ready" && inFlight.stage !== "failed";
@@ -119,9 +141,11 @@ export function MirrorRoom() {
         prompt,
       });
       setInFlight(portrait);
-      setAllPortraits((g) => [portrait, ...g]);
+      setAllPortraits((g) => [portrait, ...(g ?? [])]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast("The mirror tires — try again.", { tone: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -131,88 +155,129 @@ export function MirrorRoom() {
     try {
       const updated = await workshop.setCurrentPortrait(id);
       setAllPortraits((list) =>
-        list.map((p) =>
+        (list ?? []).map((p) =>
           p.character_id === updated.character_id
             ? { ...p, is_current: p.id === id }
             : p,
         ),
       );
+      void playSfx("mug");
+      toast("This vision now leads the hero.", { tone: "success" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast("Couldn't change the active vision.", { tone: "error" });
+    }
+  }
+
+  async function deletePortrait(id: string) {
+    try {
+      await workshop.deletePortrait(id);
+      setAllPortraits((list) => (list ?? []).filter((p) => p.id !== id));
+      if (inFlight?.id === id) setInFlight(null);
+      toast("A vision was banished from the gallery.", { tone: "success" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast("The mirror clung to it — couldn't delete.", { tone: "error" });
     }
   }
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[1.1fr_1fr]">
-      <section>
-        <MirrorFrame submitting={isPipelineLive} portrait={display} />
-        {inFlight && inFlight.stage !== "ready" && (
-          <div className="mx-auto mt-6 max-w-md">
-            <PortraitProgress
-              stage={inFlight.stage}
-              failed={inFlight.status === "failed"}
-            />
-          </div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-6">
-        <CharacterPicker
-          characters={characters}
-          chosen={chosen}
-          onPick={setChosen}
-        />
-
-        {chosen ? (
-          <>
-            <div>
-              <label className="mb-2 block font-heading text-xs uppercase tracking-[0.3em] text-tavern-gold">
-                What does the mirror reveal?
-              </label>
-              <textarea
-                rows={5}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                className="w-full rounded-lg border border-tavern-stone/40 bg-tavern-night/80 px-3 py-2 text-sm leading-relaxed text-tavern-parchment outline-none placeholder:text-tavern-stone focus:border-tavern-gold"
-                placeholder="A weather-beaten half-elven ranger with silver braids…"
+    <>
+      <div className="grid gap-10 lg:grid-cols-[1.1fr_1fr]">
+        <section>
+          <MirrorFrame submitting={isPipelineLive} portrait={display} />
+          {inFlight && inFlight.stage !== "ready" && (
+            <div className="mx-auto mt-6 max-w-md">
+              <PortraitProgress
+                stage={inFlight.stage}
+                failed={inFlight.status === "failed"}
               />
             </div>
+          )}
+        </section>
 
-            <button
-              type="button"
-              onClick={cast}
-              disabled={submitting || isPipelineLive || !prompt.trim()}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-tavern-ember px-4 py-3 font-heading uppercase tracking-[0.25em] text-tavern-night shadow-lg transition-colors hover:bg-tavern-fire disabled:opacity-50"
-            >
-              <Wand2 className="h-4 w-4" />
-              {submitting
-                ? "speaking the words…"
-                : isPipelineLive
-                  ? "the mirror is busy"
-                  : "look in the mirror"}
-            </button>
+        <section className="flex flex-col gap-6">
+          <CharacterPicker
+            characters={characters}
+            chosen={chosen}
+            onPick={setChosen}
+          />
 
-            {error && (
-              <p className="flex items-start gap-2 rounded border border-tavern-blood/50 bg-tavern-blood/10 p-3 text-sm text-tavern-blood">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                {error}
-              </p>
-            )}
+          {chosen ? (
+            <>
+              <div>
+                <Label htmlFor="mirror-prompt">
+                  What does the mirror reveal?
+                </Label>
+                <Textarea
+                  id="mirror-prompt"
+                  rows={5}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="A weather-beaten half-elven ranger with silver braids…"
+                />
+              </div>
 
-            <Gallery
-              items={gallery}
-              currentId={current?.id ?? null}
-              onSetActive={setActive}
+              <Button
+                size="lg"
+                onClick={cast}
+                disabled={submitting || isPipelineLive || !prompt.trim()}
+              >
+                <Wand2 className="h-4 w-4" />
+                {submitting
+                  ? "speaking the words…"
+                  : isPipelineLive
+                    ? "the mirror is busy"
+                    : "look in the mirror"}
+              </Button>
+
+              {error && (
+                <Card compact className="border-tavern-blood/50 bg-tavern-blood/10">
+                  <p className="flex items-start gap-2 text-sm text-tavern-blood">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    {error}
+                  </p>
+                </Card>
+              )}
+
+              <Gallery
+                items={gallery}
+                loading={allPortraits === null}
+                currentId={current?.id ?? null}
+                onSetActive={setActive}
+                onDelete={(p) => setConfirmDelete(p)}
+              />
+            </>
+          ) : characters === null ? null : characters.length === 0 ? (
+            <EmptyState
+              icon={<UserPlus className="h-7 w-7" />}
+              title="No heroes yet"
+              description="Roll one at the Fireplace first — the mirror needs a face to look for."
             />
-          </>
-        ) : (
-          <p className="rounded border border-dashed border-tavern-stone/40 bg-tavern-night/40 p-4 text-sm italic text-tavern-parchment/60">
-            Choose a hero above. The mirror only paints faces it has been told
-            to look for.
-          </p>
-        )}
-      </section>
-    </div>
+          ) : (
+            <EmptyState
+              icon={<Sparkles className="h-7 w-7" />}
+              title="Choose a hero"
+              description="The mirror only paints faces it has been told to look for."
+            />
+          )}
+        </section>
+      </div>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={async () => {
+          if (confirmDelete) await deletePortrait(confirmDelete.id);
+        }}
+        title="Banish this vision?"
+        description="The portrait will be wiped from the mirror's gallery. This cannot be undone."
+        confirmLabel="Banish"
+        cancelLabel="Keep it"
+      />
+    </>
   );
 }
 
@@ -286,16 +351,16 @@ function CharacterPicker({
 }) {
   return (
     <div>
-      <label className="mb-2 block font-heading text-xs uppercase tracking-[0.3em] text-tavern-gold">
-        Whom do you bring to the mirror?
-      </label>
+      <Label>Whom do you bring to the mirror?</Label>
       {characters === null ? (
-        <p className="text-sm italic text-tavern-parchment/50">
-          Stirring the embers, fetching your heroes…
-        </p>
+        <div className="flex flex-wrap gap-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-7 w-28 rounded-full" />
+          ))}
+        </div>
       ) : characters.length === 0 ? (
-        <p className="text-sm italic text-tavern-parchment/60">
-          No heroes yet — roll one at the Fireplace first.
+        <p className="text-sm italic text-tavern-parchment/55">
+          No heroes yet — roll one at the Fireplace.
         </p>
       ) : (
         <div className="flex flex-wrap gap-2">
@@ -304,10 +369,10 @@ function CharacterPicker({
               key={c.id}
               type="button"
               onClick={() => onPick(c)}
-              className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${
+              className={`rounded-full border px-3 py-1 font-heading text-xs uppercase tracking-[0.2em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold ${
                 chosen?.id === c.id
                   ? "border-tavern-gold bg-tavern-gold/20 text-tavern-gold"
-                  : "border-tavern-stone/30 text-tavern-parchment/70 hover:border-tavern-gold/60"
+                  : "border-tavern-stone/35 text-tavern-parchment/75 hover:border-tavern-gold/60 hover:text-tavern-parchment"
               }`}
             >
               {c.name || "Untitled"}
@@ -321,21 +386,35 @@ function CharacterPicker({
 
 function Gallery({
   items,
+  loading,
   currentId,
   onSetActive,
+  onDelete,
 }: {
   items: PortraitDTO[];
+  loading: boolean;
   currentId: string | null;
   onSetActive: (id: string) => void;
+  onDelete: (p: PortraitDTO) => void;
 }) {
+  if (loading) {
+    return (
+      <div>
+        <Label className="text-tavern-parchment/55">Past visions</Label>
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="aspect-[3/4]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (items.length === 0) return null;
   return (
     <div>
-      <h3 className="mb-3 font-heading text-xs uppercase tracking-[0.3em] text-tavern-parchment/60">
-        Past visions
-      </h3>
+      <Label className="text-tavern-parchment/55">Past visions</Label>
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-        {items.slice(0, 12).map((p) => {
+        {items.slice(0, 24).map((p) => {
           const isActive = p.id === currentId;
           return (
             <div
@@ -352,26 +431,45 @@ function Gallery({
                   alt={p.prompt}
                   title={p.prompt}
                   className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center bg-tavern-night/40 p-1 text-[0.6rem] italic text-tavern-stone">
                   {p.status === "failed" ? "vision lost" : "stirring…"}
                 </div>
               )}
-              {isActive ? (
+
+              {isActive && (
                 <span className="absolute left-1 top-1 inline-flex items-center gap-1 rounded bg-tavern-gold/90 px-1.5 py-0.5 text-[0.55rem] font-semibold uppercase tracking-[0.15em] text-tavern-night">
                   <Check className="h-3 w-3" />
                   active
                 </span>
-              ) : p.image_url ? (
+              )}
+
+              {/* Action layer — visible on hover/focus */}
+              <div className="absolute inset-x-0 bottom-0 flex justify-between gap-1 bg-gradient-to-t from-tavern-night/95 via-tavern-night/70 to-transparent p-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                {!isActive && p.image_url ? (
+                  <button
+                    type="button"
+                    onClick={() => onSetActive(p.id)}
+                    aria-label="Set as active vision"
+                    className="flex-1 rounded bg-tavern-night/70 px-1 py-0.5 text-[0.55rem] uppercase tracking-[0.15em] text-tavern-parchment hover:bg-tavern-night focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-tavern-gold"
+                  >
+                    set active
+                  </button>
+                ) : (
+                  <span className="flex-1" />
+                )}
                 <button
                   type="button"
-                  onClick={() => onSetActive(p.id)}
-                  className="absolute inset-x-0 bottom-0 bg-tavern-night/80 py-1 text-[0.55rem] uppercase tracking-[0.18em] text-tavern-parchment opacity-0 transition-opacity hover:bg-tavern-night group-hover:opacity-100"
+                  onClick={() => onDelete(p)}
+                  aria-label="Banish this vision"
+                  className="rounded bg-tavern-night/70 p-1 text-tavern-parchment/80 hover:bg-tavern-blood/40 hover:text-tavern-parchment focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-tavern-blood"
                 >
-                  set as active
+                  <Trash2 className="h-3 w-3" />
                 </button>
-              ) : null}
+              </div>
             </div>
           );
         })}

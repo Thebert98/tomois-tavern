@@ -76,6 +76,15 @@ export const workshop = {
     );
     return asJson<PortraitDTO>(res);
   },
+  async deletePortrait(id: string) {
+    const res = await authedFetch(env.workshopBaseUrl, `/portraits/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`${res.status}: ${detail}`);
+    }
+  },
   async createSong(input: {
     scope: "feat" | "party" | "lore";
     source_id?: string | null;

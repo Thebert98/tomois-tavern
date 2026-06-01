@@ -1,15 +1,16 @@
+import { AuthGate } from "@/components/auth/AuthGate";
 import { RoomShell } from "@/components/RoomShell";
+import { RoundTable } from "./RoundTable";
 
 export default function TablePage() {
   return (
-    <RoomShell
-      title="The Round Table"
-      subtitle="Your roster of heroes — across every campaign."
-    >
-      <p className="max-w-2xl text-tavern-parchment/80">
-        Coming soon: every character you&apos;ve ever rolled, shown with their
-        portraits and current party.
-      </p>
-    </RoomShell>
+    <AuthGate>
+      <RoomShell
+        title="The Round Table"
+        subtitle="Your roster of heroes — across every campaign."
+      >
+        <RoundTable />
+      </RoomShell>
+    </AuthGate>
   );
 }

@@ -32,9 +32,20 @@ async function asJson<T>(res: Response): Promise<T> {
 }
 
 // ---- workshop (Magic Mirror + Tavern Bard) ----
+export interface PortraitDTO {
+  id: string;
+  character_id: string;
+  image_url: string | null;
+  sprite_url: string | null;
+  is_current: boolean;
+  prompt: string;
+  status: string;
+  created_at: string;
+}
+
 export const workshop = {
   async createPortrait(input: {
-    character_id?: string | null;
+    character_id: string;
     prompt: string;
     aspect_ratio?: string;
   }) {
@@ -42,27 +53,22 @@ export const workshop = {
       method: "POST",
       body: JSON.stringify(input),
     });
-    return asJson<{
-      id: string;
-      image_url: string | null;
-      status: string;
-      prompt: string;
-      model: string;
-      cost_usd: number | null;
-    }>(res);
+    return asJson<PortraitDTO>(res);
   },
-  async listPortraits() {
-    const res = await authedFetch(env.workshopBaseUrl, "/portraits");
-    return asJson<
-      Array<{
-        id: string;
-        character_id: string | null;
-        image_url: string | null;
-        prompt: string;
-        status: string;
-        created_at: string;
-      }>
-    >(res);
+  async listPortraits(characterId?: string) {
+    const qs = characterId
+      ? `?character_id=${encodeURIComponent(characterId)}`
+      : "";
+    const res = await authedFetch(env.workshopBaseUrl, `/portraits${qs}`);
+    return asJson<PortraitDTO[]>(res);
+  },
+  async setCurrentPortrait(id: string) {
+    const res = await authedFetch(
+      env.workshopBaseUrl,
+      `/portraits/${id}/current`,
+      { method: "PATCH" },
+    );
+    return asJson<PortraitDTO>(res);
   },
   async createSong(input: {
     scope: "feat" | "party" | "lore";

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -14,10 +14,13 @@ export default function SignInPage() {
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  if (session) {
-    router.replace("/");
-    return null;
-  }
+  // If a session arrives (initial load, OAuth callback, etc.), bounce home.
+  // Must run in an effect — router.replace during render warns.
+  useEffect(() => {
+    if (session) router.replace("/");
+  }, [session, router]);
+
+  if (session) return null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();

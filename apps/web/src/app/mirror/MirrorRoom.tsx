@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, AlertTriangle, Wand2 } from "lucide-react";
-import { reroll, workshop } from "@/lib/api";
+import { Sparkles, AlertTriangle, Wand2, Check } from "lucide-react";
+import { reroll, workshop, type PortraitDTO } from "@/lib/api";
 
 interface Character {
   id: string;
@@ -11,28 +11,14 @@ interface Character {
   sheet: Record<string, unknown>;
 }
 
-interface Portrait {
-  id: string;
-  character_id: string | null;
-  image_url: string | null;
-  prompt: string;
-  status: string;
-  created_at: string;
-}
-
 function characterFlavor(sheet: Record<string, unknown>): string {
-  // Compose a short trait string from the sheet to seed a good prompt.
   const pick = (key: string) => {
     const f = sheet[key] as { value?: unknown } | undefined;
     return typeof f?.value === "string" ? f.value : "";
   };
-  const parts = [
-    pick("race"),
-    pick("char_class"),
-    pick("background"),
-    pick("alignment"),
-  ].filter(Boolean);
-  return parts.join(", ");
+  return [pick("race"), pick("char_class"), pick("background"), pick("alignment")]
+    .filter(Boolean)
+    .join(", ");
 }
 
 export function MirrorRoom() {
@@ -40,20 +26,19 @@ export function MirrorRoom() {
   const [chosen, setChosen] = useState<Character | null>(null);
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [latest, setLatest] = useState<Portrait | null>(null);
-  const [gallery, setGallery] = useState<Portrait[]>([]);
+  const [latest, setLatest] = useState<PortraitDTO | null>(null);
+  const [allPortraits, setAllPortraits] = useState<PortraitDTO[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Initial load: parallel fetch characters + gallery.
   useEffect(() => {
     let cancelled = false;
     Promise.all([
       reroll.listCharacters().catch(() => [] as Character[]),
-      workshop.listPortraits().catch(() => [] as Portrait[]),
+      workshop.listPortraits().catch(() => [] as PortraitDTO[]),
     ]).then(([chars, portraits]) => {
       if (cancelled) return;
       setCharacters(chars);
-      setGallery(portraits);
+      setAllPortraits(portraits);
     });
     return () => {
       cancelled = true;
@@ -62,7 +47,11 @@ export function MirrorRoom() {
 
   // Auto-seed the prompt when a character is picked.
   useEffect(() => {
-    if (!chosen) return;
+    if (!chosen) {
+      setPrompt("");
+      setLatest(null);
+      return;
+    }
     const flavor = characterFlavor(chosen.sheet);
     setPrompt(
       `Portrait of ${chosen.name}${flavor ? `, ${flavor}` : ""}. ` +
@@ -71,25 +60,33 @@ export function MirrorRoom() {
     );
   }, [chosen]);
 
+  // Filter the gallery to the chosen character's portraits.
+  const gallery = useMemo(
+    () =>
+      chosen
+        ? allPortraits.filter((p) => p.character_id === chosen.id)
+        : [],
+    [allPortraits, chosen],
+  );
+
+  // The "current" portrait for the chosen character, if any.
+  const current = useMemo(
+    () => gallery.find((p) => p.is_current) ?? null,
+    [gallery],
+  );
+
   async function cast() {
+    if (!chosen) return;
     setSubmitting(true);
     setError(null);
     setLatest(null);
     try {
-      const result = await workshop.createPortrait({
-        character_id: chosen?.id ?? null,
+      const portrait = await workshop.createPortrait({
+        character_id: chosen.id,
         prompt,
       });
-      const portrait: Portrait = {
-        id: result.id,
-        image_url: result.image_url,
-        status: result.status,
-        prompt: result.prompt,
-        character_id: chosen?.id ?? null,
-        created_at: new Date().toISOString(),
-      };
       setLatest(portrait);
-      setGallery((g) => [portrait, ...g]);
+      setAllPortraits((g) => [portrait, ...g]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -97,51 +94,84 @@ export function MirrorRoom() {
     }
   }
 
+  async function setActive(id: string) {
+    try {
+      const updated = await workshop.setCurrentPortrait(id);
+      setAllPortraits((list) =>
+        list.map((p) =>
+          p.character_id === updated.character_id
+            ? { ...p, is_current: p.id === id }
+            : p,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   return (
     <div className="grid gap-10 lg:grid-cols-[1.1fr_1fr]">
-      {/* The mirror itself */}
       <section>
-        <MirrorFrame submitting={submitting} portrait={latest} />
+        <MirrorFrame
+          submitting={submitting}
+          portrait={latest ?? current}
+        />
+        {latest?.sprite_url && (
+          <SpritePreview portrait={latest} />
+        )}
       </section>
 
-      {/* Controls + gallery */}
       <section className="flex flex-col gap-6">
         <CharacterPicker
           characters={characters}
           chosen={chosen}
           onPick={setChosen}
         />
-        <div>
-          <label className="mb-2 block font-heading text-xs uppercase tracking-[0.3em] text-tavern-gold">
-            What does the mirror reveal?
-          </label>
-          <textarea
-            rows={5}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="w-full rounded-lg border border-tavern-stone/40 bg-tavern-night/80 px-3 py-2 text-sm leading-relaxed text-tavern-parchment outline-none placeholder:text-tavern-stone focus:border-tavern-gold"
-            placeholder="A weather-beaten half-elven ranger with silver braids…"
-          />
-        </div>
 
-        <button
-          type="button"
-          onClick={cast}
-          disabled={submitting || !prompt.trim()}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-tavern-ember px-4 py-3 font-heading uppercase tracking-[0.25em] text-tavern-night shadow-lg transition-colors hover:bg-tavern-fire disabled:opacity-50"
-        >
-          <Wand2 className="h-4 w-4" />
-          {submitting ? "the mirror swirls…" : "look in the mirror"}
-        </button>
+        {chosen ? (
+          <>
+            <div>
+              <label className="mb-2 block font-heading text-xs uppercase tracking-[0.3em] text-tavern-gold">
+                What does the mirror reveal?
+              </label>
+              <textarea
+                rows={5}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                className="w-full rounded-lg border border-tavern-stone/40 bg-tavern-night/80 px-3 py-2 text-sm leading-relaxed text-tavern-parchment outline-none placeholder:text-tavern-stone focus:border-tavern-gold"
+                placeholder="A weather-beaten half-elven ranger with silver braids…"
+              />
+            </div>
 
-        {error && (
-          <p className="flex items-start gap-2 rounded border border-tavern-blood/50 bg-tavern-blood/10 p-3 text-sm text-tavern-blood">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            {error}
+            <button
+              type="button"
+              onClick={cast}
+              disabled={submitting || !prompt.trim()}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-tavern-ember px-4 py-3 font-heading uppercase tracking-[0.25em] text-tavern-night shadow-lg transition-colors hover:bg-tavern-fire disabled:opacity-50"
+            >
+              <Wand2 className="h-4 w-4" />
+              {submitting ? "the mirror swirls…" : "look in the mirror"}
+            </button>
+
+            {error && (
+              <p className="flex items-start gap-2 rounded border border-tavern-blood/50 bg-tavern-blood/10 p-3 text-sm text-tavern-blood">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                {error}
+              </p>
+            )}
+
+            <Gallery
+              items={gallery}
+              currentId={current?.id ?? null}
+              onSetActive={setActive}
+            />
+          </>
+        ) : (
+          <p className="rounded border border-dashed border-tavern-stone/40 bg-tavern-night/40 p-4 text-sm italic text-tavern-parchment/60">
+            Choose a hero above. The mirror only paints faces it has been told
+            to look for.
           </p>
         )}
-
-        <Gallery items={gallery} />
       </section>
     </div>
   );
@@ -153,7 +183,7 @@ function MirrorFrame({
   portrait,
 }: {
   submitting: boolean;
-  portrait: Portrait | null;
+  portrait: PortraitDTO | null;
 }) {
   return (
     <div className="relative mx-auto aspect-[3/4] w-full max-w-md rounded-[2.5rem] border-8 border-tavern-gold/40 bg-tavern-night/80 p-2 shadow-[0_0_40px_rgba(212,175,55,0.25)]">
@@ -206,7 +236,25 @@ function MirrorFrame({
   );
 }
 
-// ---- Character picker ----
+// ---- Sprite preview (shown right after generation) ----
+function SpritePreview({ portrait }: { portrait: PortraitDTO }) {
+  if (!portrait.sprite_url) return null;
+  return (
+    <div className="mx-auto mt-6 max-w-xs text-center">
+      <div className="mb-2 font-heading text-xs uppercase tracking-[0.3em] text-tavern-gold/70">
+        Party sprite
+      </div>
+      <img
+        src={portrait.sprite_url}
+        alt="Pixel sprite"
+        className="mx-auto w-32 rounded border border-tavern-stone/40 bg-tavern-night/60 p-2"
+        style={{ imageRendering: "pixelated" }}
+      />
+    </div>
+  );
+}
+
+// ---- Character picker (no more "no one") ----
 function CharacterPicker({
   characters,
   chosen,
@@ -227,22 +275,10 @@ function CharacterPicker({
         </p>
       ) : characters.length === 0 ? (
         <p className="text-sm italic text-tavern-parchment/60">
-          No heroes yet — roll one at the Fireplace first, or describe one
-          freely below.
+          No heroes yet — roll one at the Fireplace first.
         </p>
       ) : (
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => onPick(null)}
-            className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${
-              chosen === null
-                ? "border-tavern-gold bg-tavern-gold/20 text-tavern-gold"
-                : "border-tavern-stone/30 text-tavern-parchment/70 hover:border-tavern-gold/60"
-            }`}
-          >
-            no one
-          </button>
           {characters.map((c) => (
             <button
               key={c.id}
@@ -263,40 +299,63 @@ function CharacterPicker({
   );
 }
 
-// ---- Gallery ----
-function Gallery({ items }: { items: Portrait[] }) {
+// ---- Gallery — only this character's portraits, with "set as active" ----
+function Gallery({
+  items,
+  currentId,
+  onSetActive,
+}: {
+  items: PortraitDTO[];
+  currentId: string | null;
+  onSetActive: (id: string) => void;
+}) {
   if (items.length === 0) return null;
   return (
     <div>
       <h3 className="mb-3 font-heading text-xs uppercase tracking-[0.3em] text-tavern-parchment/60">
         Past visions
       </h3>
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {items.slice(0, 12).map((p) =>
-          p.image_url ? (
-            <a
-              key={p.id}
-              href={p.image_url}
-              target="_blank"
-              rel="noreferrer"
-              className="group relative aspect-square overflow-hidden rounded border border-tavern-stone/40"
-              title={p.prompt}
-            >
-              <img
-                src={p.image_url}
-                alt={p.prompt}
-                className="h-full w-full object-cover transition-transform group-hover:scale-105"
-              />
-            </a>
-          ) : (
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+        {items.slice(0, 12).map((p) => {
+          const isActive = p.id === currentId;
+          return (
             <div
               key={p.id}
-              className="aspect-square rounded border border-dashed border-tavern-stone/40 bg-tavern-night/40 p-2 text-[0.6rem] italic text-tavern-stone"
+              className={`group relative aspect-[3/4] overflow-hidden rounded border ${
+                isActive
+                  ? "border-tavern-gold shadow-[0_0_18px_rgba(212,175,55,0.5)]"
+                  : "border-tavern-stone/40"
+              }`}
             >
-              {p.status === "failed" ? "vision lost" : "the mirror stirs…"}
+              {p.image_url ? (
+                <img
+                  src={p.image_url}
+                  alt={p.prompt}
+                  title={p.prompt}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-tavern-night/40 p-1 text-[0.6rem] italic text-tavern-stone">
+                  {p.status === "failed" ? "vision lost" : "stirring…"}
+                </div>
+              )}
+              {isActive ? (
+                <span className="absolute left-1 top-1 inline-flex items-center gap-1 rounded bg-tavern-gold/90 px-1.5 py-0.5 text-[0.55rem] font-semibold uppercase tracking-[0.15em] text-tavern-night">
+                  <Check className="h-3 w-3" />
+                  active
+                </span>
+              ) : p.image_url ? (
+                <button
+                  type="button"
+                  onClick={() => onSetActive(p.id)}
+                  className="absolute inset-x-0 bottom-0 bg-tavern-night/80 py-1 text-[0.55rem] uppercase tracking-[0.18em] text-tavern-parchment opacity-0 transition-opacity hover:bg-tavern-night group-hover:opacity-100"
+                >
+                  set as active
+                </button>
+              ) : null}
             </div>
-          ),
-        )}
+          );
+        })}
       </div>
     </div>
   );

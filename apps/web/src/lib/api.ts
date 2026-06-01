@@ -106,6 +106,131 @@ export const workshop = {
   },
 };
 
+// ---- friends ----
+export interface FriendDTO {
+  other_user_id: string;
+  other_email: string | null;
+  status: "pending" | "accepted" | "blocked";
+  direction: "incoming" | "outgoing";
+  created_at: string | null;
+}
+
+export const friends = {
+  async list() {
+    const res = await authedFetch(env.workshopBaseUrl, "/friends");
+    return asJson<FriendDTO[]>(res);
+  },
+  async invite(email: string) {
+    const res = await authedFetch(env.workshopBaseUrl, "/friends", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+    return asJson<FriendDTO>(res);
+  },
+  async accept(otherUserId: string) {
+    const res = await authedFetch(
+      env.workshopBaseUrl,
+      `/friends/${otherUserId}/accept`,
+      { method: "POST" },
+    );
+    return asJson<FriendDTO>(res);
+  },
+  async remove(otherUserId: string) {
+    const res = await authedFetch(
+      env.workshopBaseUrl,
+      `/friends/${otherUserId}`,
+      { method: "DELETE" },
+    );
+    if (!res.ok && res.status !== 204) {
+      throw new Error(`${res.status}: ${await res.text()}`);
+    }
+  },
+};
+
+// ---- parties ----
+export interface PartyDTO {
+  id: string;
+  owner_id: string;
+  name: string;
+  created_at: string;
+}
+export interface PartyMemberDTO {
+  party_id: string;
+  user_id: string;
+  character_id: string | null;
+  role: string | null;
+  email: string | null;
+}
+export interface PartyDetailDTO extends PartyDTO {
+  members: PartyMemberDTO[];
+}
+
+export const parties = {
+  async list() {
+    const res = await authedFetch(env.workshopBaseUrl, "/parties");
+    return asJson<PartyDTO[]>(res);
+  },
+  async get(id: string) {
+    const res = await authedFetch(env.workshopBaseUrl, `/parties/${id}`);
+    return asJson<PartyDetailDTO>(res);
+  },
+  async create(name: string) {
+    const res = await authedFetch(env.workshopBaseUrl, "/parties", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    return asJson<PartyDTO>(res);
+  },
+  async rename(id: string, name: string) {
+    const res = await authedFetch(env.workshopBaseUrl, `/parties/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+    return asJson<PartyDTO>(res);
+  },
+  async remove(id: string) {
+    const res = await authedFetch(env.workshopBaseUrl, `/parties/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok && res.status !== 204) {
+      throw new Error(`${res.status}: ${await res.text()}`);
+    }
+  },
+  async addMember(
+    partyId: string,
+    input: { user_id: string; character_id?: string | null; role?: string | null },
+  ) {
+    const res = await authedFetch(
+      env.workshopBaseUrl,
+      `/parties/${partyId}/members`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+    return asJson<PartyMemberDTO>(res);
+  },
+  async patchMember(
+    partyId: string,
+    userId: string,
+    input: { character_id?: string | null; role?: string | null },
+  ) {
+    const res = await authedFetch(
+      env.workshopBaseUrl,
+      `/parties/${partyId}/members/${userId}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
+    return asJson<PartyMemberDTO>(res);
+  },
+  async removeMember(partyId: string, userId: string) {
+    const res = await authedFetch(
+      env.workshopBaseUrl,
+      `/parties/${partyId}/members/${userId}`,
+      { method: "DELETE" },
+    );
+    if (!res.ok && res.status !== 204) {
+      throw new Error(`${res.status}: ${await res.text()}`);
+    }
+  },
+};
+
 // ---- reroll (existing service) ----
 export interface RerollCharacter {
   id: string;

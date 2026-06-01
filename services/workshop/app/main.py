@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .api import mirror, bard
+from .api import mirror, bard, friends, parties
 
 app = FastAPI(title="Tomoi's Tavern Workshop", version="0.1.0")
 
@@ -17,6 +17,8 @@ app.add_middleware(
 
 app.include_router(mirror.router)
 app.include_router(bard.router)
+app.include_router(friends.router)
+app.include_router(parties.router)
 
 
 @app.get("/health")

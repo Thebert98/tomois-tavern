@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     pixellab_api_key: str = ""
     pixellab_base_url: str = "https://api.pixellab.ai/v1"
     sprite_size: int = 128  # 64 / 96 / 128 / 200 are typical PixelLab sizes
+    sprite_animation_frames: int = 4  # frames in the idle cycle
 
     # Tavern Bard
     suno_api_key: str = ""

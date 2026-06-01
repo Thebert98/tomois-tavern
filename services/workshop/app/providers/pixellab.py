@@ -23,6 +23,12 @@ class SpriteResult:
     cost_usd: Optional[float]
 
 
+@dataclass
+class AnimationResult:
+    frames_b64: list[str]   # each frame is base64-encoded PNG
+    cost_usd: Optional[float]
+
+
 def enabled() -> bool:
     return settings.sprites_enabled and bool(settings.pixellab_api_key)
 
@@ -83,3 +89,61 @@ async def generate_sprite(
         raise RuntimeError(f"Unexpected PixelLab response shape: keys={list(data)}")
     # PixelLab pricing: ~$0.05-0.15 per generation depending on size.
     return SpriteResult(image_b64=b64, cost_usd=0.10)
+
+
+async def generate_idle_animation(
+    sprite_image_b64: str,
+    description: str,
+    n_frames: Optional[int] = None,
+) -> Optional[AnimationResult]:
+    """Animate the sprite into a short idle loop (subtle breathing / bob),
+    for the party screen hover effect. Returns None when sprites are off.
+
+    PixelLab's animate-with-text takes the static sprite as a reference and
+    a short description of the motion, and produces N frames that can be
+    cycled client-side.
+    """
+    if not enabled():
+        return None
+    n = n_frames or settings.sprite_animation_frames
+    payload = {
+        "image": {"type": "base64", "base64": sprite_image_b64},
+        "image_size": {"width": settings.sprite_size, "height": settings.sprite_size},
+        "text_prompt": (
+            f"{description}. Subtle idle breathing animation — gentle vertical "
+            "bob, slight shoulder rise and fall, eyes blinking once. Looping."
+        ),
+        "n_frames": n,
+        "view": "side",
+        "action": "idle",
+        "direction": "east",
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.pixellab_api_key}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=180) as client:
+        resp = await client.post(
+            f"{settings.pixellab_base_url}/animate-with-text",
+            json=payload,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    # PixelLab returns either {"images": [{"base64": ...}, ...]} or
+    # {"frames": ["...","..."]}. Handle both.
+    frames = []
+    if isinstance(data.get("images"), list):
+        for f in data["images"]:
+            if isinstance(f, dict) and "base64" in f:
+                frames.append(f["base64"])
+            elif isinstance(f, str):
+                frames.append(f)
+    elif isinstance(data.get("frames"), list):
+        frames = [f if isinstance(f, str) else f.get("base64") for f in data["frames"]]
+    frames = [f for f in frames if f]
+    if not frames:
+        raise RuntimeError(f"Unexpected PixelLab animation response: keys={list(data)}")
+    # Each animated generation is ~$0.15-0.20.
+    return AnimationResult(frames_b64=frames, cost_usd=0.15)

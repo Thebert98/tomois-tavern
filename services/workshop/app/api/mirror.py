@@ -28,6 +28,7 @@ class PortraitResponse(BaseModel):
     character_id: str
     image_url: Optional[str]
     sprite_url: Optional[str]
+    sprite_frames: Optional[list[str]] = None
     is_current: bool
     status: str
     prompt: str
@@ -71,9 +72,12 @@ async def create_portrait(
 
         # Sprite is optional — only run when PixelLab is configured. We
         # condition the sprite on the portrait we just painted so the
-        # sprite resembles the same character.
+        # sprite resembles the same character. Then animate it into a
+        # short idle loop for the party screen hover effect.
         sprite_url: Optional[str] = None
+        sprite_frames: Optional[list[str]] = None
         sprite_cost: float = 0.0
+
         sprite_result = await pixellab_provider.generate_sprite(
             description=body.prompt, reference_image_url=image_url
         )
@@ -84,13 +88,39 @@ async def create_portrait(
                 suggested_name=f"sprite-{portrait_id}.png",
                 content_type="image/png",
             )
-            sprite_cost = sprite_result.cost_usd or 0
+            sprite_cost += sprite_result.cost_usd or 0
+
+            # Animate the static sprite into an idle loop. Failure here
+            # shouldn't fail the whole portrait — log it and continue
+            # with the static sprite only.
+            try:
+                anim = await pixellab_provider.generate_idle_animation(
+                    sprite_image_b64=sprite_result.image_b64,
+                    description=body.prompt,
+                )
+            except Exception as anim_exc:
+                log.warning("Sprite animation failed (continuing): %s", anim_exc)
+                anim = None
+
+            if anim is not None:
+                frame_urls: list[str] = []
+                for idx, frame_b64 in enumerate(anim.frames_b64):
+                    frame_url = storage.persist_image_bytes(
+                        user_id=user.id,
+                        blob=base64.b64decode(frame_b64),
+                        suggested_name=f"sprite-{portrait_id}-frame-{idx}.png",
+                        content_type="image/png",
+                    )
+                    frame_urls.append(frame_url)
+                sprite_frames = frame_urls
+                sprite_cost += anim.cost_usd or 0
 
         total_cost = (portrait_result.cost_usd or 0) + sprite_cost
         db.table("portraits").update(
             {
                 "image_url": image_url,
                 "sprite_url": sprite_url,
+                "sprite_frames": sprite_frames,
                 "status": "ready",
                 "cost_usd": total_cost,
             }
@@ -101,6 +131,7 @@ async def create_portrait(
             character_id=body.character_id,
             image_url=image_url,
             sprite_url=sprite_url,
+            sprite_frames=sprite_frames,
             is_current=False,
             status="ready",
             prompt=body.prompt,

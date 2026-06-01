@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cinzel, EB_Garamond } from "next/font/google";
+import { Providers } from "@/components/Providers";
 import "./globals.css";
 
 const heading = Cinzel({
@@ -28,7 +29,7 @@ export default function RootLayout({
       className={`${heading.variable} ${body.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-tavern-night text-tavern-parchment">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

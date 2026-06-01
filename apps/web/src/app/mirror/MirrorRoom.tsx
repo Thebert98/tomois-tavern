@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, AlertTriangle, Wand2, Check } from "lucide-react";
 import { reroll, workshop, type PortraitDTO } from "@/lib/api";
 import { SpriteAnim } from "@/components/SpriteAnim";
+import { PortraitProgress } from "@/components/PortraitProgress";
+import { supabaseBrowser } from "@/lib/supabase/client";
 
 interface Character {
   id: string;
@@ -27,7 +29,7 @@ export function MirrorRoom() {
   const [chosen, setChosen] = useState<Character | null>(null);
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [latest, setLatest] = useState<PortraitDTO | null>(null);
+  const [inFlight, setInFlight] = useState<PortraitDTO | null>(null);
   const [allPortraits, setAllPortraits] = useState<PortraitDTO[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,11 +48,10 @@ export function MirrorRoom() {
     };
   }, []);
 
-  // Auto-seed the prompt when a character is picked.
   useEffect(() => {
     if (!chosen) {
       setPrompt("");
-      setLatest(null);
+      setInFlight(null);
       return;
     }
     const flavor = characterFlavor(chosen.sheet);
@@ -61,32 +62,60 @@ export function MirrorRoom() {
     );
   }, [chosen]);
 
-  // Filter the gallery to the chosen character's portraits.
+  // Subscribe to row updates for the in-flight portrait.
+  useEffect(() => {
+    if (!inFlight) return;
+    const sb = supabaseBrowser();
+    const channel = sb
+      .channel(`portrait:${inFlight.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "portraits",
+          filter: `id=eq.${inFlight.id}`,
+        },
+        (payload) => {
+          const next = payload.new as PortraitDTO;
+          setInFlight(next);
+          setAllPortraits((list) => {
+            const exists = list.some((p) => p.id === next.id);
+            return exists
+              ? list.map((p) => (p.id === next.id ? next : p))
+              : [next, ...list];
+          });
+        },
+      )
+      .subscribe();
+    return () => {
+      sb.removeChannel(channel);
+    };
+  }, [inFlight?.id]);
+
   const gallery = useMemo(
-    () =>
-      chosen
-        ? allPortraits.filter((p) => p.character_id === chosen.id)
-        : [],
+    () => (chosen ? allPortraits.filter((p) => p.character_id === chosen.id) : []),
     [allPortraits, chosen],
   );
-
-  // The "current" portrait for the chosen character, if any.
   const current = useMemo(
     () => gallery.find((p) => p.is_current) ?? null,
     [gallery],
   );
 
+  const display = inFlight && inFlight.stage !== "ready" ? inFlight : current;
+  const isPipelineLive =
+    !!inFlight && inFlight.stage !== "ready" && inFlight.stage !== "failed";
+
   async function cast() {
     if (!chosen) return;
     setSubmitting(true);
     setError(null);
-    setLatest(null);
     try {
       const portrait = await workshop.createPortrait({
         character_id: chosen.id,
         prompt,
       });
-      setLatest(portrait);
+      setInFlight(portrait);
       setAllPortraits((g) => [portrait, ...g]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -113,12 +142,17 @@ export function MirrorRoom() {
   return (
     <div className="grid gap-10 lg:grid-cols-[1.1fr_1fr]">
       <section>
-        <MirrorFrame
-          submitting={submitting}
-          portrait={latest ?? current}
-        />
-        {latest?.sprite_url && (
-          <SpritePreview portrait={latest} />
+        <MirrorFrame submitting={isPipelineLive} portrait={display} />
+        {inFlight && inFlight.stage !== "ready" && (
+          <div className="mx-auto mt-6 max-w-md">
+            <PortraitProgress
+              stage={inFlight.stage}
+              failed={inFlight.status === "failed"}
+            />
+          </div>
+        )}
+        {inFlight?.sprite_url && (
+          <SpritePreview portrait={inFlight} />
         )}
       </section>
 
@@ -147,11 +181,15 @@ export function MirrorRoom() {
             <button
               type="button"
               onClick={cast}
-              disabled={submitting || !prompt.trim()}
+              disabled={submitting || isPipelineLive || !prompt.trim()}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-tavern-ember px-4 py-3 font-heading uppercase tracking-[0.25em] text-tavern-night shadow-lg transition-colors hover:bg-tavern-fire disabled:opacity-50"
             >
               <Wand2 className="h-4 w-4" />
-              {submitting ? "the mirror swirls…" : "look in the mirror"}
+              {submitting
+                ? "speaking the words…"
+                : isPipelineLive
+                  ? "the mirror is busy"
+                  : "look in the mirror"}
             </button>
 
             {error && (
@@ -191,7 +229,7 @@ function MirrorFrame({
       <div className="absolute inset-0 rounded-[2.5rem] border-2 border-tavern-gold/20" />
       <div className="relative h-full w-full overflow-hidden rounded-[2rem] bg-gradient-to-b from-tavern-night via-[#1a1208] to-[#0a0604]">
         <AnimatePresence>
-          {submitting && (
+          {submitting && !portrait?.image_url && (
             <motion.div
               key="swirl"
               initial={{ opacity: 0 }}
@@ -207,9 +245,9 @@ function MirrorFrame({
               <Sparkles className="absolute h-10 w-10 text-tavern-gold/70 flicker" />
             </motion.div>
           )}
-          {portrait?.image_url && !submitting && (
+          {portrait?.image_url && (
             <motion.img
-              key={portrait.id}
+              key={portrait.id + portrait.image_url}
               src={portrait.image_url}
               alt="Generated portrait"
               initial={{ opacity: 0, scale: 1.04 }}
@@ -237,7 +275,6 @@ function MirrorFrame({
   );
 }
 
-// ---- Sprite preview (shown right after generation) ----
 function SpritePreview({ portrait }: { portrait: PortraitDTO }) {
   if (!portrait.sprite_url) return null;
   const animated = portrait.sprite_frames && portrait.sprite_frames.length > 1;
@@ -257,7 +294,6 @@ function SpritePreview({ portrait }: { portrait: PortraitDTO }) {
   );
 }
 
-// ---- Character picker (no more "no one") ----
 function CharacterPicker({
   characters,
   chosen,
@@ -302,7 +338,6 @@ function CharacterPicker({
   );
 }
 
-// ---- Gallery — only this character's portraits, with "set as active" ----
 function Gallery({
   items,
   currentId,

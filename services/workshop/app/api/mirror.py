@@ -83,7 +83,7 @@ async def create_portrait(
         # request.
         try:
             sprite_result = await pixellab_provider.generate_sprite(
-                description=body.prompt, reference_image_url=image_url
+                description=body.prompt,
             )
         except Exception as sprite_exc:
             log.warning("Sprite generation failed (continuing with portrait only): %s",

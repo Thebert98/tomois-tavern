@@ -124,14 +124,17 @@ async def _get_character(character_id: str) -> dict[str, Any]:
 async def _wait_for_character(
     character_id: str, max_seconds: int = 600, interval_seconds: float = 6.0
 ) -> dict[str, Any]:
-    """Poll the character until status is completed/failed or timeout hits."""
+    """Poll until rotation_urls is populated. GET /v2/characters/{id} doesn't
+    expose a status string — completion is signaled by the rotation URLs
+    appearing on the character row."""
     waited = 0.0
     while waited < max_seconds:
         info = await _get_character(character_id)
-        status = (info.get("status") or "").lower()
-        if status in ("completed", "ready", "done"):
+        rotations = info.get("rotation_urls") or info.get("rotations") or {}
+        if isinstance(rotations, dict) and any(rotations.values()):
             return info
-        if status in ("failed", "error"):
+        # Defensive: if PixelLab ever adds an explicit failure flag, honor it.
+        if (info.get("status") or "").lower() in ("failed", "error"):
             raise RuntimeError(f"PixelLab character {character_id} failed: {info}")
         await asyncio.sleep(interval_seconds)
         waited += interval_seconds
@@ -178,7 +181,7 @@ async def generate_character_sprite(description: str) -> Optional[CharacterResul
 # -- animation ---------------------------------------------------------------
 
 async def _animate_character(
-    character_id: str, template_animation_id: str = "idle"
+    character_id: str, template_animation_id: str = "breathing-idle"
 ) -> str:
     """Kick off an animation job; returns job_id."""
     payload: dict[str, Any] = {
@@ -201,10 +204,10 @@ async def _animate_character(
             )
             resp.raise_for_status()
         data = resp.json()
+    job_ids = data.get("background_job_ids") or []
     job_id = (
-        data.get("job_id")
-        or data.get("id")
-        or (data.get("jobs", [{}])[0].get("id") if isinstance(data.get("jobs"), list) else None)
+        job_ids[0] if isinstance(job_ids, list) and job_ids
+        else data.get("job_id") or data.get("id")
     )
     if not job_id:
         raise RuntimeError(f"animate-character returned no job id: keys={list(data)}")
@@ -261,7 +264,7 @@ async def animate_character_idle(character_id: str) -> Optional[AnimationFramesR
     """Animate the character on PixelLab's `idle` template; returns frame URLs."""
     if not enabled():
         return None
-    job_id = await _animate_character(character_id, template_animation_id="idle")
+    job_id = await _animate_character(character_id, template_animation_id="breathing-idle")
     log.info("PixelLab animation queued: %s (character=%s)", job_id, character_id)
     job = await _wait_for_job(job_id)
     frames = _extract_frame_urls(job)

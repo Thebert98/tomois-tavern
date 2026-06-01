@@ -78,9 +78,18 @@ async def create_portrait(
         sprite_frames: Optional[list[str]] = None
         sprite_cost: float = 0.0
 
-        sprite_result = await pixellab_provider.generate_sprite(
-            description=body.prompt, reference_image_url=image_url
-        )
+        # Sprite generation is best-effort. If PixelLab is slow/down/over
+        # quota, log and continue with the portrait — don't sink the whole
+        # request.
+        try:
+            sprite_result = await pixellab_provider.generate_sprite(
+                description=body.prompt, reference_image_url=image_url
+            )
+        except Exception as sprite_exc:
+            log.warning("Sprite generation failed (continuing with portrait only): %s",
+                        sprite_exc)
+            sprite_result = None
+
         if sprite_result is not None:
             sprite_url = storage.persist_image_bytes(
                 user_id=user.id,

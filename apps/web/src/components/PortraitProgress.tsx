@@ -16,9 +16,14 @@ const STAGES: { key: PortraitStage; label: string; flavor: string }[] = [
     flavor: "Strokes of light and shadow fall on the canvas.",
   },
   {
+    key: "describing",
+    label: "Studying",
+    flavor: "An apprentice peers at the painting and takes notes.",
+  },
+  {
     key: "sculpting",
     label: "Sculpting",
-    flavor: "A pixel-smith chips the portrait into a sprite.",
+    flavor: "The pixel-smith carves the hero, one direction at a time.",
   },
   {
     key: "animating",
@@ -35,6 +40,7 @@ const STAGES: { key: PortraitStage; label: string; flavor: string }[] = [
 const ORDER: PortraitStage[] = [
   "queued",
   "painting",
+  "describing",
   "sculpting",
   "animating",
   "ready",

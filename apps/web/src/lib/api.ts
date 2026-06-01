@@ -95,16 +95,26 @@ export const workshop = {
       method: "POST",
       body: JSON.stringify(input),
     });
-    return asJson<{
-      id: string;
-      audio_url: string | null;
-      lyrics: string | null;
-      status: string;
-      duration_s: number | null;
-      cost_usd: number | null;
-    }>(res);
+    return asJson<SongDTO>(res);
+  },
+  async listSongs() {
+    const res = await authedFetch(env.workshopBaseUrl, "/songs");
+    return asJson<SongDTO[]>(res);
   },
 };
+
+export interface SongDTO {
+  id: string;
+  scope: "feat" | "party" | "lore";
+  source_id: string | null;
+  prompt: string;
+  lyrics: string | null;
+  audio_url: string | null;
+  status: string;
+  duration_s: number | null;
+  cost_usd: number | null;
+  created_at: string;
+}
 
 // ---- friends ----
 export interface FriendDTO {

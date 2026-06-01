@@ -271,4 +271,25 @@ export const reroll = {
       throw new Error(`${res.status}: ${detail}`);
     }
   },
+  async updateSheet(id: string, sheet: Record<string, unknown>) {
+    const res = await authedFetch(env.rerollBaseUrl, `/characters/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ sheet }),
+    });
+    return asJson<RerollCharacter>(res);
+  },
+  async generate(id: string, userNotes = "") {
+    const res = await authedFetch(
+      env.rerollBaseUrl,
+      `/characters/${id}/generate`,
+      {
+        method: "POST",
+        body: JSON.stringify({ user_notes: userNotes }),
+      },
+    );
+    return asJson<{
+      character: RerollCharacter;
+      validation_errors: Array<{ rule: string; field: string; detail: string }>;
+    }>(res);
+  },
 };

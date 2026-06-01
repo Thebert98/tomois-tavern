@@ -1,16 +1,19 @@
+import { Suspense } from "react";
+import { AuthGate } from "@/components/auth/AuthGate";
 import { RoomShell } from "@/components/RoomShell";
+import { Fireplace } from "./Fireplace";
 
 export default function FireplacePage() {
   return (
-    <RoomShell
-      title="The Fireplace"
-      subtitle="Stoke the embers — roll a hero."
-    >
-      <p className="max-w-2xl text-tavern-parchment/80">
-        The character forge lives in <code>ReRoll</code>. We&apos;ll embed it
-        here next — for now, click through to the standalone app while we wire
-        up the bridge.
-      </p>
-    </RoomShell>
+    <AuthGate>
+      <RoomShell
+        title="The Fireplace"
+        subtitle="Stoke the embers — lock what you love, reroll the rest."
+      >
+        <Suspense fallback={null}>
+          <Fireplace />
+        </Suspense>
+      </RoomShell>
+    </AuthGate>
   );
 }

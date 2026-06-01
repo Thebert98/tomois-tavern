@@ -157,3 +157,65 @@ def set_current_portrait(
     if not updated.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Portrait not found")
     return updated.data[0]
+
+
+@router.delete("/{portrait_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_portrait(
+    portrait_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Delete a portrait + its storage objects. RLS scopes the row delete
+    to the owner; storage cleanup uses the service-role client because the
+    `portraits` storage bucket policy keys on `(storage.foldername(name))[1]
+    = auth.uid()::text` which matches user_client too — but the service
+    client is simpler and safer (already used by the upload pipeline)."""
+    db = user_client(user.token)
+
+    # Verify ownership (RLS will also block, but a clean 404 is friendlier).
+    row = (
+        db.table("portraits")
+        .select("user_id,image_url,sprite_url,sprite_frames")
+        .eq("id", portrait_id)
+        .execute()
+    )
+    if not row.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Portrait not found")
+    record = row.data[0]
+    if record["user_id"] != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your portrait")
+
+    # Best-effort storage cleanup; failures here don't block the row delete.
+    sb = service_client()
+    paths: list[str] = []
+    for url_key in ("image_url", "sprite_url"):
+        url = record.get(url_key) or ""
+        path = _storage_path_from_url(url, bucket="portraits")
+        if path:
+            paths.append(path)
+    for frame_url in record.get("sprite_frames") or []:
+        path = _storage_path_from_url(frame_url, bucket="portraits")
+        if path:
+            paths.append(path)
+    if paths:
+        try:
+            sb.storage.from_("portraits").remove(paths)
+        except Exception as exc:
+            log.warning("Storage cleanup failed for portrait %s: %s", portrait_id, exc)
+
+    delete = db.table("portraits").delete().eq("id", portrait_id).execute()
+    if not delete.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Portrait not found")
+    return None
+
+
+def _storage_path_from_url(url: str, *, bucket: str) -> Optional[str]:
+    """Extract the object key inside `bucket` from a Supabase public URL.
+    e.g. ``https://.../storage/v1/object/public/portraits/{user}/{file}``
+    → ``{user}/{file}``. Returns None if the URL doesn't match."""
+    if not url:
+        return None
+    marker = f"/storage/v1/object/public/{bucket}/"
+    idx = url.find(marker)
+    if idx == -1:
+        return None
+    return url[idx + len(marker) :]

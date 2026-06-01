@@ -18,14 +18,6 @@ class Settings(BaseSettings):
     portrait_model: str = "fal-ai/flux-pro/v1.1-ultra"
     portrait_bucket: str = "portraits"
 
-    # Magic Mirror — sprite (optional). Disabled by default so a fork
-    # without a PixelLab key doesn't error out — portraits work standalone.
-    sprites_enabled: bool = False
-    pixellab_api_key: str = ""
-    pixellab_base_url: str = "https://api.pixellab.ai/v1"
-    sprite_size: int = 128  # 64 / 96 / 128 / 200 are typical PixelLab sizes
-    sprite_animation_frames: int = 4  # frames in the idle cycle
-
     # Tavern Bard
     suno_api_key: str = ""
     suno_base_url: str = "https://api.sunoapi.com/api/v1"

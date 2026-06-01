@@ -36,8 +36,7 @@ ReRoll keeps its own repository and Railway deploy. The tavern's web app calls R
 | Animation   | Framer Motion · Howler.js for ambient audio         |
 | Workshop    | FastAPI + Pydantic                                  |
 | Auth + DB   | Supabase (shared with ReRoll: pgvector, RLS, Auth)  |
-| Image gen   | fal.ai · Flux 1.1 Pro (portraits, always on)        |
-| Sprite gen  | PixelLab · pixflux (JRPG sprites, OPTIONAL)         |
+| Image gen   | fal.ai · Flux 1.1 Pro (portraits)                   |
 | Music gen   | Suno (via reseller, e.g. sunoapi.com)               |
 | Lyrics      | Anthropic Claude Sonnet 4.6                         |
 | Storage     | Supabase Storage (portraits, songs)                 |
@@ -70,19 +69,14 @@ uvicorn app.main:app --reload --port 8001
 pnpm dev   # runs apps/web on :3000
 ```
 
-## Optional features
+## Archived experiments
 
-### Sprites (Magic Mirror)
-Portraits always work. Sprites are an optional second pass through PixelLab —
-forks that don't want a PixelLab account can leave this off. To enable:
-
-```bash
-SPRITES_ENABLED=true
-PIXELLAB_API_KEY=pl-...   # https://pixellab.ai
-```
-
-When off, the mirror generates the portrait only, the sprite preview hides,
-and the party screen falls back to portrait avatars.
+A full pixel-sprite + idle-animation pipeline (Claude Vision → PixelLab
+character generator → animation frames) lives on the
+[`archive/sprites-pipeline`](https://github.com/Thebert98/tomois-tavern/tree/archive/sprites-pipeline)
+branch. It works end-to-end but produces a different vibe than the current
+portrait-led direction, so it's parked there for later or a different
+project. Cherry-pick or branch from it if you want sprites back.
 
 ## Deployment
 

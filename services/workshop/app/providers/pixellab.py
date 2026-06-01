@@ -73,7 +73,10 @@ async def generate_sprite(
         "Authorization": f"Bearer {settings.pixellab_api_key}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=90) as client:
+    # PixelLab's pixflux is synchronous but can run 60-180s for image-
+    # conditioned requests. Generous timeout, fast connect.
+    timeout = httpx.Timeout(connect=15, read=120, write=60, pool=15)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(
             f"{settings.pixellab_base_url}/generate-image-pixflux",
             json=payload,
@@ -122,7 +125,9 @@ async def generate_idle_animation(
         "Authorization": f"Bearer {settings.pixellab_api_key}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=180) as client:
+    # Animation produces N frames in one call — give it real time to run.
+    timeout = httpx.Timeout(connect=15, read=240, write=60, pool=15)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(
             f"{settings.pixellab_base_url}/animate-with-text",
             json=payload,

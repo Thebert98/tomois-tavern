@@ -249,21 +249,22 @@ async def _wait_for_job(
 
 
 def _extract_frame_urls(job: dict[str, Any]) -> list[str]:
-    """Be tolerant of result shape — frames may live at several paths."""
-    result = job.get("result") or job
-    for key in ("frames", "animation_frames", "images", "urls"):
-        frames = result.get(key)
-        if isinstance(frames, list) and frames:
-            out: list[str] = []
-            for f in frames:
-                if isinstance(f, str):
-                    out.append(f)
-                elif isinstance(f, dict):
-                    u = f.get("url") or f.get("image_url") or f.get("image", {}).get("url")
-                    if u:
-                        out.append(u)
-            if out:
-                return out
+    """Animation frames live at last_response.storage_urls.frames[] when the
+    job completes. Earlier docs hinted at other shapes; we try the known
+    path first and fall back defensively."""
+    last = job.get("last_response") or {}
+    storage = last.get("storage_urls") or {}
+    frames = storage.get("frames")
+    if isinstance(frames, list) and frames:
+        return [f for f in frames if isinstance(f, str)]
+    # Fallbacks for older / different response shapes.
+    for container in (last, job.get("result") or {}, job):
+        for key in ("animation_frames", "urls"):
+            v = container.get(key)
+            if isinstance(v, list) and v:
+                out = [f for f in v if isinstance(f, str)]
+                if out:
+                    return out
     return []
 
 

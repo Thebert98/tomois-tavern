@@ -1,0 +1,35 @@
+# Node
+node_modules/
+.next/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.local
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Vercel
+.vercel/
+
+# Local session log
+SESSION.md
+
+# Asset cache (downloaded SDXL refs, etc.)
+.cache/

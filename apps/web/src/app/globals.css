@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+/* Tomoi's Tavern palette — warm candlelight on deep night */
+@theme inline {
+  --color-tavern-night: #0d0a08;
+  --color-tavern-ember: #c66b2d;
+  --color-tavern-fire: #f0a050;
+  --color-tavern-parchment: #f3e6c8;
+  --color-tavern-stone: #7a6b56;
+  --color-tavern-oak: #3b261a;
+  --color-tavern-blood: #872322;
+  --color-tavern-gold: #d4af37;
+
+  --font-heading: var(--font-heading);
+  --font-body: var(--font-body);
+}
+
+body {
+  font-family: var(--font-body), Georgia, serif;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading), serif;
+  letter-spacing: 0.04em;
+}
+
+/* Subtle vignette overlay so the candlelight feels like it comes from the center */
+.vignette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 30%,
+    rgba(0, 0, 0, 0.5) 70%,
+    rgba(0, 0, 0, 0.85) 100%
+  );
+}
+
+/* Ember-flicker animation used by hotspots when hovered */
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 8px var(--color-tavern-fire));
+  }
+  45% {
+    opacity: 1;
+    filter: drop-shadow(0 0 14px var(--color-tavern-fire));
+  }
+  72% {
+    opacity: 0.85;
+    filter: drop-shadow(0 0 6px var(--color-tavern-ember));
+  }
+}
+
+.flicker {
+  animation: flicker 1.6s infinite ease-in-out;
+}

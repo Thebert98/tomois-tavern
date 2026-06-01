@@ -89,14 +89,64 @@ Before opening the phase's PR:
 
 ## Status block
 
-Update as we go.
-
 - [x] Phase 0 — Plan + DESIGN.md
-- [ ] Phase 1 — Foundation
-- [ ] Phase 2 — Tavern scene polish
-- [ ] Phase 3 — Magic Mirror delete + responsive
-- [ ] Phase 4 — Round Table
-- [ ] Phase 5 — Notice Board
-- [ ] Phase 6 — Fireplace bridge
-- [ ] Phase 7 — Bard's Stage UI
-- [ ] Phase 8 — Final audit
+- [x] Phase 1 — Foundation (shared UI primitives, HUD, audio scaffold)
+- [x] Phase 2 — Tavern scene polish (responsive + dust motes + door SFX)
+- [x] Phase 3 — Magic Mirror delete + responsive + polish
+- [x] Phase 4 — Round Table (roster, seat/rename/delete)
+- [x] Phase 5 — Notice Board (friends + parties)
+- [x] Phase 6 — Fireplace bridge (locked-field reroll UX)
+- [x] Phase 7 — Bard's Stage UI (compose + library, Suno-key pending)
+- [x] Phase 8 — Final audit (see Audit results below)
+
+## Audit results (2026-06-01)
+
+**Secrets — clean.**
+- `git ls-files` for any AK, JWT, key UUID, anthropic prefix: 0 matches.
+- `git log -S` for every actual secret value across all history: 0 matches.
+- `apps/web/.env.local` and `services/workshop/.env` confirmed gitignored.
+
+**RLS — clean.**
+- Workshop's `service_client()` is used in exactly two places, both
+  documented: the portrait BackgroundTask pipeline (runs after user
+  response, JWT may expire) and the storage-cleanup half of
+  `delete_portrait`. Every other route uses `user_client(user.token)`.
+- Every new table has RLS enabled and owner-scoped policies.
+- Two `SECURITY DEFINER` helpers (`lookup_user_by_email`,
+  `lookup_users_by_ids`) are granted only to `authenticated` and are
+  narrow.
+
+**Input validation — clean.**
+- Every workshop POST/PUT/PATCH body uses a Pydantic `BaseModel`.
+- Email body validated by regex; party name length-bounded (1..80).
+
+**Frontend XSS / env hygiene — clean.**
+- Zero `dangerouslySetInnerHTML`.
+- Zero direct `process.env.*` reads outside `lib/env.ts`.
+- Every `<img>` has an `alt` attribute.
+
+**CORS — fixed.**
+- Workshop `FRONTEND_ORIGIN` now splits on commas (same pattern as
+  ReRoll backend). Set to `https://...vercel.app,http://localhost:3000`
+  on Railway to allow both prod and dev.
+
+**A11y — clean.**
+- Every interactive element has a focus-visible ring.
+- Modal traps focus, restores on close, dismisses on Escape.
+- Tooltip is `role="tooltip"` and announced via `aria-describedby`.
+- Lock toggle in the Fireplace is `aria-pressed`.
+- `prefers-reduced-motion` disables `flicker`, `breath`, `animate-pulse`.
+
+**Voice consistency — clean.**
+- Each room follows the voice glossary in DESIGN.md §10.
+- All empty states + toasts use tavern-flavoured copy.
+
+## Known outstanding items
+- **Suno reseller key** — without it, song generation returns a
+  friendly "the bard's lute is unstrung" error.
+- **Audio assets** — `useAmbient` + `playSfx` no-op until files exist.
+- **Hearth panorama art** — current background is CSS gradients.
+- **Lore CRUD** — Bard's "Lore" scope is disabled until we add
+  world_lore endpoints.
+- **Lookup-by-email enumeration** — accepted tradeoff for the app's
+  scope; rate-limiting is a future improvement.

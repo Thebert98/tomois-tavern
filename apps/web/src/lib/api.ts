@@ -32,6 +32,14 @@ async function asJson<T>(res: Response): Promise<T> {
 }
 
 // ---- workshop (Magic Mirror + Tavern Bard) ----
+export type PortraitStage =
+  | "queued"
+  | "painting"
+  | "sculpting"
+  | "animating"
+  | "ready"
+  | "failed";
+
 export interface PortraitDTO {
   id: string;
   character_id: string;
@@ -41,6 +49,7 @@ export interface PortraitDTO {
   is_current: boolean;
   prompt: string;
   status: string;
+  stage: PortraitStage | null;
   created_at: string;
 }
 

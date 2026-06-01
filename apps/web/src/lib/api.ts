@@ -107,16 +107,43 @@ export const workshop = {
 };
 
 // ---- reroll (existing service) ----
+export interface RerollCharacter {
+  id: string;
+  name: string;
+  sheet: Record<string, unknown>;
+  updated_at: string;
+}
+
 export const reroll = {
   async listCharacters() {
     const res = await authedFetch(env.rerollBaseUrl, "/characters");
-    return asJson<
-      Array<{
-        id: string;
-        name: string;
-        sheet: Record<string, unknown>;
-        updated_at: string;
-      }>
-    >(res);
+    return asJson<RerollCharacter[]>(res);
+  },
+  async getCharacter(id: string) {
+    const res = await authedFetch(env.rerollBaseUrl, `/characters/${id}`);
+    return asJson<RerollCharacter>(res);
+  },
+  async createCharacter(name: string) {
+    const res = await authedFetch(env.rerollBaseUrl, "/characters", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    return asJson<RerollCharacter>(res);
+  },
+  async renameCharacter(id: string, name: string) {
+    const res = await authedFetch(env.rerollBaseUrl, `/characters/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    });
+    return asJson<RerollCharacter>(res);
+  },
+  async deleteCharacter(id: string) {
+    const res = await authedFetch(env.rerollBaseUrl, `/characters/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`${res.status}: ${detail}`);
+    }
   },
 };

@@ -14,6 +14,7 @@ import {
 } from "@tomois/ui";
 import { reroll, type RerollCharacter } from "@/lib/api";
 import { playSfx } from "@/lib/sfx";
+import { getField, setField, type SheetField } from "@/lib/sheet";
 
 /**
  * Edit modal — full sheet editor with per-field lock toggles and a
@@ -41,26 +42,6 @@ const FIELDS: FieldDef[] = [
   { key: "personality", label: "Personality", kind: "long" },
   { key: "backstory", label: "Backstory", kind: "long" },
 ];
-
-type SheetField = { value: unknown; locked?: boolean; source?: string };
-
-function getField(
-  sheet: Record<string, unknown> | null,
-  key: string,
-): SheetField {
-  const raw = sheet?.[key];
-  if (raw && typeof raw === "object") return raw as SheetField;
-  return { value: null };
-}
-
-function setField(
-  sheet: Record<string, unknown>,
-  key: string,
-  patch: Partial<SheetField>,
-): Record<string, unknown> {
-  const existing = getField(sheet, key);
-  return { ...sheet, [key]: { ...existing, ...patch } };
-}
 
 export interface EditCharacterModalProps {
   character: RerollCharacter | null;

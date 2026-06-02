@@ -21,13 +21,43 @@ const sizeClasses: Record<Size, string> = {
   xl: "h-20 w-20 text-base",
 };
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("") || "?";
+/** Two-letter initials from a display name (e.g. "Kael Stormbreaker" → "KS"). */
+export function initials(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? "")
+      .join("") || "?"
+  );
+}
+
+/**
+ * Initials block — the no-portrait fallback rendered standalone. Use this
+ * when you want the same look as Avatar's fallback but at a non-circular
+ * shape (e.g. a 3:4 card placeholder). Pure presentation; no image.
+ */
+export function Initials({
+  name,
+  className,
+}: {
+  name: string;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-label={name}
+      className={cn(
+        "inline-flex items-center justify-center bg-tavern-oak text-tavern-gold",
+        className,
+      )}
+    >
+      <span className="font-heading uppercase tracking-[0.1em]">
+        {initials(name)}
+      </span>
+    </span>
+  );
 }
 
 export function Avatar({ src, name, size = "md", className, ...rest }: AvatarProps) {

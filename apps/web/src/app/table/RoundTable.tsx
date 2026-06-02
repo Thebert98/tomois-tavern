@@ -1,13 +1,10 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Sparkles, Trash2, UserPlus, Flame } from "lucide-react";
+import { UserPlus, Flame } from "lucide-react";
 import {
-  Avatar,
   Button,
-  Card,
-  Chip,
   ConfirmDialog,
   EmptyState,
   Input,
@@ -16,32 +13,23 @@ import {
   Skeleton,
   useToast,
 } from "@tomois/ui";
-import { reroll, workshop, type PortraitDTO, type RerollCharacter } from "@/lib/api";
+import {
+  reroll,
+  workshop,
+  type PortraitDTO,
+  type RerollCharacter,
+} from "@/lib/api";
 import { playSfx } from "@/lib/sfx";
-
-function pickField(sheet: Record<string, unknown>, key: string): string {
-  const f = sheet[key] as { value?: unknown } | undefined;
-  if (typeof f?.value === "string") return f.value;
-  if (typeof f?.value === "number") return String(f.value);
-  return "";
-}
-
-function describe(sheet: Record<string, unknown>): string {
-  const parts = [
-    pickField(sheet, "race"),
-    pickField(sheet, "char_class"),
-    pickField(sheet, "level") ? `lvl ${pickField(sheet, "level")}` : "",
-  ].filter(Boolean);
-  return parts.join(" · ");
-}
+import { CharacterCard } from "./CharacterCard";
 
 export function RoundTable() {
+  const router = useRouter();
   const { toast } = useToast();
   const [characters, setCharacters] = useState<RerollCharacter[] | null>(null);
   const [portraits, setPortraits] = useState<PortraitDTO[]>([]);
-  const [confirmDelete, setConfirmDelete] = useState<RerollCharacter | null>(null);
-  const [renaming, setRenaming] = useState<RerollCharacter | null>(null);
-  const [renameValue, setRenameValue] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<RerollCharacter | null>(
+    null,
+  );
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
 
@@ -82,25 +70,6 @@ export function RoundTable() {
     }
   }
 
-  async function renameHero() {
-    if (!renaming) return;
-    const name = renameValue.trim();
-    if (!name || name === renaming.name) {
-      setRenaming(null);
-      return;
-    }
-    try {
-      await reroll.renameCharacter(renaming.id, name);
-      toast(`Re-named to ${name}.`, { tone: "success" });
-      setRenaming(null);
-      await refresh();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Re-name failed.", {
-        tone: "error",
-      });
-    }
-  }
-
   async function deleteHero(c: RerollCharacter) {
     try {
       await reroll.deleteCharacter(c.id);
@@ -111,6 +80,18 @@ export function RoundTable() {
         tone: "error",
       });
     }
+  }
+
+  // Edit + level-up land properly in PR 4 / PR 5. For this PR the chips are
+  // present + clickable; edit routes to the existing Fireplace editor so
+  // nothing regresses, level-up surfaces a friendly placeholder.
+  function onEdit(c: RerollCharacter) {
+    router.push(`/fireplace?character=${c.id}`);
+  }
+  function onLevelUp(_c: RerollCharacter) {
+    toast("The next chapter is being written — coming soon.", {
+      tone: "info",
+    });
   }
 
   return (
@@ -128,7 +109,7 @@ export function RoundTable() {
       {characters === null ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-40 rounded-xl" />
+            <Skeleton key={i} className="h-56 rounded-xl" />
           ))}
         </div>
       ) : characters.length === 0 ? (
@@ -145,80 +126,16 @@ export function RoundTable() {
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {characters.map((c) => {
-            const portrait = portraitByCharacter.get(c.id) ?? null;
-            const summary = describe(c.sheet);
-            return (
-              <Card key={c.id} className="flex flex-col gap-3">
-                <div className="flex items-start gap-3">
-                  <Avatar
-                    size="lg"
-                    name={c.name || "Untitled"}
-                    src={portrait?.image_url ?? null}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-heading text-base uppercase tracking-[0.2em] text-tavern-parchment">
-                      {c.name || "Untitled"}
-                    </div>
-                    {summary ? (
-                      <div className="mt-1 truncate text-xs italic text-tavern-parchment/65">
-                        {summary}
-                      </div>
-                    ) : (
-                      <div className="mt-1 text-xs italic text-tavern-stone">
-                        sheet not yet rolled
-                      </div>
-                    )}
-                    {portrait ? (
-                      <Chip tone="active" className="mt-2">
-                        <Sparkles className="h-3 w-3" />
-                        portrait set
-                      </Chip>
-                    ) : (
-                      <Chip tone="muted" className="mt-2">
-                        no portrait yet
-                      </Chip>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/fireplace?character=${c.id}`}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-heading text-[0.6rem] uppercase tracking-[0.2em] text-tavern-parchment/70 hover:bg-tavern-night/40 hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
-                  >
-                    <Flame className="h-3 w-3" />
-                    sheet
-                  </Link>
-                  <Link
-                    href="/mirror"
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-heading text-[0.6rem] uppercase tracking-[0.2em] text-tavern-parchment/70 hover:bg-tavern-night/40 hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
-                  >
-                    <Sparkles className="h-3 w-3" />
-                    mirror
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRenaming(c);
-                      setRenameValue(c.name || "");
-                    }}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-heading text-[0.6rem] uppercase tracking-[0.2em] text-tavern-parchment/70 hover:bg-tavern-night/40 hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    rename
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete(c)}
-                    aria-label={`Banish ${c.name}`}
-                    className="ml-auto inline-flex items-center gap-1 rounded-md p-1.5 text-tavern-parchment/55 hover:bg-tavern-blood/30 hover:text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-blood"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </Card>
-            );
-          })}
+          {characters.map((c) => (
+            <CharacterCard
+              key={c.id}
+              character={c}
+              portrait={portraitByCharacter.get(c.id) ?? null}
+              onEdit={() => onEdit(c)}
+              onLevelUp={() => onLevelUp(c)}
+              onBanish={() => setConfirmDelete(c)}
+            />
+          ))}
         </div>
       )}
 
@@ -255,30 +172,6 @@ export function RoundTable() {
             placeholder="e.g. Kael Stormbreaker"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            autoFocus
-          />
-        </div>
-      </Modal>
-
-      <Modal
-        open={!!renaming}
-        onClose={() => setRenaming(null)}
-        title="Rename hero"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setRenaming(null)}>
-              cancel
-            </Button>
-            <Button onClick={renameHero}>save</Button>
-          </>
-        }
-      >
-        <div>
-          <Label htmlFor="rename-input">New name</Label>
-          <Input
-            id="rename-input"
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
             autoFocus
           />
         </div>

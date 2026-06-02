@@ -115,9 +115,9 @@ function patchedSheet(
         ...(key === "level" ? { value: target } : {}),
       };
     } else if (key === "stats") {
-      next[key] = { ...cell, value: finalStats, locked: locks.stats ?? true };
+      next[key] = { ...cell, value: finalStats, locked: locks.stats ?? false };
     } else if (key === "spells") {
-      next[key] = { ...cell, value: spells, locked: locks.spells ?? true };
+      next[key] = { ...cell, value: spells, locked: locks.spells ?? false };
     } else {
       next[key] = { ...cell, locked: false };
     }
@@ -304,8 +304,8 @@ export function LevelUpWizard({
       // picks — otherwise leave them free so the LLM applies the climb.
       const effectiveLocks: Record<string, boolean> = {
         ...state.locks,
-        stats: hasAsiPicks ? (state.locks.stats ?? true) : false,
-        spells: hasSpellPicks ? (state.locks.spells ?? true) : false,
+        stats: hasAsiPicks ? (state.locks.stats ?? false) : false,
+        spells: hasSpellPicks ? (state.locks.spells ?? false) : false,
       };
       const patched = patchedSheet(
         character.sheet as Sheet,

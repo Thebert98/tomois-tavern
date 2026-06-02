@@ -122,12 +122,12 @@ export function SpellsStep({
           </div>
           {state.spells.length > 0 && (
             <FieldLock
-              locked={state.locks.spells ?? true}
+              locked={state.locks.spells ?? false}
               onToggle={() =>
                 set({
                   locks: {
                     ...state.locks,
-                    spells: !(state.locks.spells ?? true),
+                    spells: !(state.locks.spells ?? false),
                   },
                 })
               }

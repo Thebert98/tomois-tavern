@@ -48,16 +48,16 @@ export function IdentityStep({
   set: (patch: Partial<FireplaceState>) => void;
 }) {
   function toggleLock(key: string) {
-    set({ locks: { ...state.locks, [key]: !(state.locks[key] ?? true) } });
+    set({ locks: { ...state.locks, [key]: !(state.locks[key] ?? false) } });
   }
   return (
     <div className="space-y-4">
       <LockedField
         htmlFor="hero-name"
         label="Name"
-        locked={state.locks.name ?? true}
+        locked={state.locks.name ?? false}
         onToggleLock={() => toggleLock("name")}
-        hint="Names are usually locked — but free it and the fire may christen them anew."
+        hint="Free by default — lock it if the fire should keep this name."
       >
         <Input
           id="hero-name"
@@ -72,7 +72,7 @@ export function IdentityStep({
         <LockedField
           htmlFor="hero-race"
           label="Race"
-          locked={state.locks.race ?? true}
+          locked={state.locks.race ?? false}
           onToggleLock={() => toggleLock("race")}
         >
           <Picker
@@ -88,7 +88,7 @@ export function IdentityStep({
         <LockedField
           htmlFor="hero-class"
           label="Class"
-          locked={state.locks.char_class ?? true}
+          locked={state.locks.char_class ?? false}
           onToggleLock={() => toggleLock("char_class")}
         >
           <Picker
@@ -105,7 +105,7 @@ export function IdentityStep({
       <LockedField
         htmlFor="hero-background"
         label="Background"
-        locked={state.locks.background ?? true}
+        locked={state.locks.background ?? false}
         onToggleLock={() => toggleLock("background")}
       >
         <Picker

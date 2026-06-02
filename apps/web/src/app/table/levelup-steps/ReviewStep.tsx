@@ -102,20 +102,20 @@ export function ReviewStep({
         <LockRow
           label="Ability scores"
           hint="Locked = your ASI picks are kept exactly."
-          locked={state.locks.stats ?? true}
+          locked={state.locks.stats ?? false}
           onToggle={() =>
             set({
-              locks: { ...state.locks, stats: !(state.locks.stats ?? true) },
+              locks: { ...state.locks, stats: !(state.locks.stats ?? false) },
             })
           }
         />
         <LockRow
           label="Spells"
           hint="Locked = the fire can't swap your picks."
-          locked={state.locks.spells ?? true}
+          locked={state.locks.spells ?? false}
           onToggle={() =>
             set({
-              locks: { ...state.locks, spells: !(state.locks.spells ?? true) },
+              locks: { ...state.locks, spells: !(state.locks.spells ?? false) },
             })
           }
         />

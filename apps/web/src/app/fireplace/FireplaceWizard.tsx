@@ -20,6 +20,7 @@ import { playStylePromptPrefix, type PlayStyle } from "@/lib/playstyle";
 import { frameHeroSeed, pickHeroSeed } from "@/lib/heroSeeds";
 import { cascadePicks } from "@/lib/cascade";
 import { namingConventionFor } from "@/lib/heritage";
+import { srdConstraintsFor } from "@/lib/srdConstraints";
 import { IdentityStep } from "./steps/IdentityStep";
 import { AlignmentLevelStep } from "./steps/AlignmentLevelStep";
 import { PlayStyleStep } from "./steps/PlayStyleStep";
@@ -265,12 +266,16 @@ export function FireplaceWizard() {
       // cascade-picked). The LLM is good at producing tradition-accurate
       // names once it knows the convention.
       const naming = namingConventionFor(anchors.race);
+      // Hard SRD rails — background's granted skills + the legal spell list
+      // for this class+level. Stops the LLM from forgetting Acolyte's
+      // Insight+Religion or giving a level-1 Druid Spirit Guardians.
+      const constraints = srdConstraintsFor(anchors);
       // When the player didn't write a vibe, inject a random hero seed so
       // the LLM has something specific to riff on (without it, the model
       // collapses to the same handful of default archetypes).
       const userVibe = state.vibe.trim();
       const seed = userVibe ? "" : frameHeroSeed(pickHeroSeed(2));
-      const vibePayload = [prefix, naming, userVibe, seed]
+      const vibePayload = [prefix, naming, constraints, userVibe, seed]
         .filter(Boolean)
         .join(" ")
         .trim();
@@ -318,9 +323,13 @@ export function FireplaceWizard() {
       });
       const prefix = playStylePromptPrefix(INITIAL.playStyle);
       const naming = namingConventionFor(anchors.race);
+      const constraints = srdConstraintsFor(anchors);
       // Randomize always gets a hero seed — there's no user vibe to anchor it.
       const seed = frameHeroSeed(pickHeroSeed(2));
-      const vibePayload = [prefix, naming, seed].filter(Boolean).join(" ").trim();
+      const vibePayload = [prefix, naming, constraints, seed]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
       const result = await reroll.generate(created.id, vibePayload);
       const hero = await settleHero(
         created.id,

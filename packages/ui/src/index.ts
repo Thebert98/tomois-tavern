@@ -4,7 +4,7 @@ export { Card, type CardProps } from "./Card";
 export { Input, Textarea, Label } from "./Input";
 export { Skeleton } from "./Skeleton";
 export { Chip, type ChipProps } from "./Chip";
-export { Avatar, type AvatarProps } from "./Avatar";
+export { Avatar, Initials, initials, type AvatarProps } from "./Avatar";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { Tooltip, type TooltipProps } from "./Tooltip";
 export { SignBoard, type SignBoardProps } from "./SignBoard";

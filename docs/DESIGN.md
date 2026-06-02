@@ -240,8 +240,8 @@ icon.
 
 Two flows use the same multi-step wizard primitive (`apps/web/src/components/wizard/Wizard.tsx`):
 
-- **Fireplace** — new-hero forge. Steps: Identity → Alignment+Level → Stats → Spells (casters) → Seal.
-- **Round Table → Level up** — guided ascent. Steps: Target → Hit dice → ASI/feat → Spells (casters) → Review.
+- **Fireplace** — new-hero forge. Steps: Identity → Alignment+Level → Play style → Stats → Spells (casters) → Seal.
+- **Round Table → Level up** — guided ascent. Steps: Target → Play style → Hit dice → ASI/feat → Spells (casters) → Review.
 
 Conventions every wizard follows:
 
@@ -252,9 +252,30 @@ Conventions every wizard follows:
 - **Validation** — `isValid(state)` gates the Next button per step. Required steps stay disabled until satisfied; optional steps surface a Skip button instead.
 - **Motion** — each step enters with the `settle` variant (`apps/web/src/lib/motion.ts`). `prefers-reduced-motion` is honored at the global level.
 - **State** — the wizard owns the shared state object; steps receive `(state, set)` and patch via `set(partial)`. `onComplete(finalState)` may be async; the wizard disables its footer during the pending promise.
-- **Locks on submit** — both wizards convert their picks into `{value, locked: true}` cells via `lockedSheetFrom` (`apps/web/src/lib/sheet.ts`) and `PUT /characters/{id}` before `/generate`. The backend's `merge_preserving_locks` defensively re-asserts the locks; the SRD validator gates legality. No new endpoints needed.
+- **Per-field locks** — every pickable field renders a small `FieldLock` toggle (`apps/web/src/components/wizard/FieldLock.tsx`). Default state when a value is entered: **locked** (the fire keeps it). One tap toggles to **free** (the fire may revise it, but the value still seeds the prompt as a suggestion). Block-level locks exist for stats and spell selections; per-field locks exist for name / race / class / background / alignment / level. The Fireplace's `LockedField` composite (`apps/web/src/components/wizard/LockedField.tsx`) standardizes the input-plus-lock layout.
+- **Locks on submit** — both wizards convert their picks into `{value, locked}` cells via `sheetFromPicks(picks, locks)` (`apps/web/src/lib/sheet.ts`) and `PUT /characters/{id}` before `/generate`. The backend's `merge_preserving_locks` defensively re-asserts every locked value; the SRD validator gates legality. No new endpoints needed.
 
-See `/design` for a live demo of the primitive.
+See `/design` for a live demo of the primitive and the lock toggles.
+
+---
+
+## 12. Play styles
+
+Both wizards include a stance picker (`apps/web/src/components/wizard/PlayStylePicker.tsx`). Five options:
+
+- **Balanced** — no special bias; the fire weighs everything evenly. Default.
+- **Support** — healing, buffs, utility. Primary recommendation: WIS (CHA for Bard / Sorcerer); secondary: CHA (or WIS).
+- **Tanky** — AC, HP, concentration durability. Primary: CON; secondary: STR (DEX for Monk / Rogue / Ranger).
+- **Damage** — optimize output. Primary: the class's casting ability (CASTER) or martial mainstat (STR for melee, DEX for finesse classes); secondary: CON.
+- **True to lore** — the backstory steers. No primary/secondary highlight; the prompt tells the LLM that "who they are" drives stat priorities, spell picks, equipment flavor, and personality.
+
+Where the stance shows up:
+
+- **StatsStep (Fireplace)** — recommended abilities show a small `bg-tavern-gold` dot next to the label and a `border-tavern-gold/60` (primary) or `border-tavern-gold/30` (secondary) tint. Hint only — never enforced.
+- **ASIStep (LevelUp)** — when the player's ASI pick targets the stance's recommended primary, the window shows a `matches your {stance}` chip.
+- **/generate** — `playStylePromptPrefix(style)` (`apps/web/src/lib/playstyle.ts`) prepends one sentence to the user's vibe / notes before the call. Empty for Balanced; explicit for the others.
+
+Rules live in `apps/web/src/lib/playstyle.ts`. `recommendedAbilities(style, charClass)` is the single source of truth for the dot rules; `playStylePromptPrefix(style)` is the single source of truth for the prompt sentence.
 
 ---
 

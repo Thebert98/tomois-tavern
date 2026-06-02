@@ -30,6 +30,9 @@ import {
 } from "@tomois/ui";
 import { unfurl } from "@/lib/motion";
 import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
+import { LockedField } from "@/components/wizard/LockedField";
+import { PlayStylePicker } from "@/components/wizard/PlayStylePicker";
+import type { PlayStyle } from "@/lib/playstyle";
 
 /**
  * Living style guide. Renders every primitive, palette token, motion
@@ -374,6 +377,28 @@ export default function DesignPage() {
           </Card>
         </Section>
 
+        <Section title="Field locks" eyebrow="§11">
+          <p className="mb-3 text-sm italic text-tavern-parchment/65">
+            Locked = the fire keeps the value. Free = it&apos;s offered as a
+            suggestion the fire may revise. Default is locked when a value is
+            set.
+          </p>
+          <Card>
+            <FieldLockDemo />
+          </Card>
+        </Section>
+
+        <Section title="Play styles" eyebrow="§12">
+          <p className="mb-3 text-sm italic text-tavern-parchment/65">
+            Shared stance picker — used in the Fireplace and at the Round
+            Table. Influences stat recommendations and seeds the fire&apos;s
+            prompt with a stance sentence.
+          </p>
+          <Card>
+            <PlayStyleDemo />
+          </Card>
+        </Section>
+
         <Section title="Voice & tone" eyebrow="§1">
           <ul className="space-y-2">
             {VOICE.map((v) => (
@@ -470,6 +495,58 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 interface DemoState {
   oath: string;
   weapon: string;
+}
+
+function FieldLockDemo() {
+  const [oath, setOath] = useState("");
+  const [locked, setLocked] = useState(true);
+  return (
+    <div className="space-y-3">
+      <LockedField
+        htmlFor="design-lock-demo"
+        label="Oath"
+        locked={locked}
+        onToggleLock={() => setLocked((l) => !l)}
+        hint={
+          locked
+            ? "locked — the fire keeps this exactly."
+            : "free — the fire may rework it, but treats the value as a suggestion."
+        }
+      >
+        <Input
+          id="design-lock-demo"
+          placeholder="By moon and oak…"
+          value={oath}
+          onChange={(e) => setOath(e.target.value)}
+        />
+      </LockedField>
+      <p className="text-[0.65rem] italic text-tavern-parchment/55">
+        Submit serializes this as{" "}
+        <code className="font-mono text-xs text-tavern-gold">
+          {`{ value: "${oath || "…"}", locked: ${locked} }`}
+        </code>
+        .
+      </p>
+    </div>
+  );
+}
+
+function PlayStyleDemo() {
+  const [style, setStyle] = useState<PlayStyle>("balanced");
+  return (
+    <div className="space-y-3">
+      <PlayStylePicker value={style} onChange={setStyle} />
+      <p className="text-[0.7rem] italic text-tavern-parchment/55">
+        chose: <span className="text-tavern-gold">{style}</span>. The prompt
+        prefix that goes to <code className="text-tavern-gold">/generate</code>{" "}
+        comes from{" "}
+        <code className="font-mono text-xs text-tavern-gold">
+          playStylePromptPrefix(style)
+        </code>
+        .
+      </p>
+    </div>
+  );
 }
 
 function DesignWizardDemo() {

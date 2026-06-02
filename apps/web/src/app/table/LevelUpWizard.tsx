@@ -21,10 +21,12 @@ import {
   type Ability,
 } from "@/lib/srd";
 import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
+import { playStylePromptPrefix } from "@/lib/playstyle";
 import { TargetStep } from "./levelup-steps/TargetStep";
 import { HitDiceStep } from "./levelup-steps/HitDiceStep";
 import { ASIStep } from "./levelup-steps/ASIStep";
 import { SpellsStep as LevelUpSpellsStep } from "./levelup-steps/SpellsStep";
+import { PlayStyleStep } from "./levelup-steps/PlayStyleStep";
 import { ReviewStep } from "./levelup-steps/ReviewStep";
 import {
   applyAsiToStats,
@@ -88,6 +90,7 @@ function patchedSheet(
   target: number,
   finalStats: Record<Ability, number>,
   spells: string[],
+  locks: Record<string, boolean>,
 ): Sheet {
   const next: Sheet = { ...sheet };
   const allKeys = new Set([
@@ -111,9 +114,9 @@ function patchedSheet(
         ...(key === "level" ? { value: target } : {}),
       };
     } else if (key === "stats") {
-      next[key] = { ...cell, value: finalStats, locked: true };
+      next[key] = { ...cell, value: finalStats, locked: locks.stats ?? true };
     } else if (key === "spells") {
-      next[key] = { ...cell, value: spells, locked: true };
+      next[key] = { ...cell, value: spells, locked: locks.spells ?? true };
     } else {
       next[key] = { ...cell, locked: false };
     }
@@ -152,6 +155,8 @@ export function LevelUpWizard({
       hp: {},
       spellsAdded: [],
       notes: "",
+      playStyle: "balanced",
+      locks: {},
     }),
     [currentLevel, charClass, sheet],
   );
@@ -215,6 +220,13 @@ export function LevelUpWizard({
       render: (state, set) => <TargetStep state={state} set={set} />,
     },
     {
+      id: "playstyle",
+      title: "How do they fight now?",
+      flavor: "Stance shapes the ASI highlight and seeds the fire's prompt.",
+      optional: true,
+      render: (state, set) => <PlayStyleStep state={state} set={set} />,
+    },
+    {
       id: "hp",
       title: "How hardy is each step?",
       flavor: "Max, average, or roll your hit die for every level gained.",
@@ -261,6 +273,7 @@ export function LevelUpWizard({
         state.target,
         finalStats,
         mergedSpells,
+        state.locks,
       );
       await reroll.update(character.id, { sheet: patched });
 
@@ -276,7 +289,8 @@ export function LevelUpWizard({
         noteParts.push(`Feat${featNames.length > 1 ? "s" : ""} taken: ${featNames.join(", ")}.`);
       }
       if (state.notes.trim()) noteParts.push(state.notes.trim());
-      const note = noteParts.join(" ");
+      const prefix = playStylePromptPrefix(state.playStyle);
+      const note = (prefix + noteParts.join(" ")).trim();
 
       const result = await reroll.generate(character.id, note);
       setErrors(result.validation_errors ?? []);

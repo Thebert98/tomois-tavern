@@ -73,3 +73,23 @@ export function fieldValue<T = unknown>(
 ): T | undefined {
   return getField(sheet, key).value as T | undefined;
 }
+
+/**
+ * Build a sheet patch from a flat `{key: value}` map plus a parallel
+ * `{key: locked}` map. Each present pick becomes a `{value, locked}` cell;
+ * the lock map decides whether the LLM can change it. Used by the Fireplace
+ * and LevelUp wizards once per-field lock UI is in.
+ */
+export function sheetFromPicks(
+  picks: Record<string, unknown>,
+  locks: Record<string, boolean>,
+): Sheet {
+  const out: Sheet = {};
+  for (const [k, v] of Object.entries(picks)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === "string" && v.trim() === "") continue;
+    if (Array.isArray(v) && v.length === 0) continue;
+    out[k] = { value: v, locked: locks[k] ?? true };
+  }
+  return out;
+}

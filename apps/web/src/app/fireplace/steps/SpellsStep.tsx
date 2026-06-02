@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { BookOpen, Sparkles } from "lucide-react";
 import { Card, Chip, cn } from "@tomois/ui";
+import { FieldLock } from "@/components/wizard/FieldLock";
 import {
   CLASS_INFO,
   legalSpellsForClass,
@@ -106,17 +107,34 @@ export function SpellsStep({
 
       {/* Counter */}
       {!state.autoSpells && (
-        <div className="flex items-center gap-3 text-xs">
-          <CounterChip
-            label="cantrips"
-            current={cantripsPicked}
-            cap={cap.cantrips}
-          />
-          <CounterChip
-            label="spells"
-            current={leveledPicked}
-            cap={cap.spells}
-          />
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3">
+            <CounterChip
+              label="cantrips"
+              current={cantripsPicked}
+              cap={cap.cantrips}
+            />
+            <CounterChip
+              label="spells"
+              current={leveledPicked}
+              cap={cap.spells}
+            />
+          </div>
+          {state.spells.length > 0 && (
+            <FieldLock
+              locked={state.locks.spells ?? true}
+              onToggle={() =>
+                set({
+                  locks: {
+                    ...state.locks,
+                    spells: !(state.locks.spells ?? true),
+                  },
+                })
+              }
+              label="Spell selection"
+              size="sm"
+            />
+          )}
         </div>
       )}
 

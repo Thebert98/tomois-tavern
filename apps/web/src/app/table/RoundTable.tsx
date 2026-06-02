@@ -21,6 +21,7 @@ import {
 import { playSfx } from "@/lib/sfx";
 import { CharacterCard } from "./CharacterCard";
 import { EditCharacterModal } from "./EditCharacterModal";
+import { LevelUpModal } from "./LevelUpModal";
 
 export function RoundTable() {
   const { toast } = useToast();
@@ -30,6 +31,7 @@ export function RoundTable() {
     null,
   );
   const [editing, setEditing] = useState<RerollCharacter | null>(null);
+  const [levelUp, setLevelUp] = useState<RerollCharacter | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
 
@@ -82,14 +84,11 @@ export function RoundTable() {
     }
   }
 
-  // edit opens the in-room modal; level-up wires in PR 5.
   function onEdit(c: RerollCharacter) {
     setEditing(c);
   }
-  function onLevelUp(_c: RerollCharacter) {
-    toast("The next chapter is being written — coming soon.", {
-      tone: "info",
-    });
+  function onLevelUp(c: RerollCharacter) {
+    setLevelUp(c);
   }
 
   return (
@@ -152,6 +151,12 @@ export function RoundTable() {
       <EditCharacterModal
         character={editing}
         onClose={() => setEditing(null)}
+        onChanged={() => void refresh()}
+      />
+
+      <LevelUpModal
+        character={levelUp}
+        onClose={() => setLevelUp(null)}
         onChanged={() => void refresh()}
       />
 

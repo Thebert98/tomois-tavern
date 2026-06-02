@@ -1,4 +1,5 @@
 import type { Ability } from "@/lib/srd";
+import type { PlayStyle } from "@/lib/playstyle";
 
 export type HpMethod = "max" | "avg" | "roll";
 
@@ -33,6 +34,13 @@ export interface LevelUpState {
   hp: Record<number, HpPick>;
   spellsAdded: string[];
   notes: string;
+  /** Stance — biases ASI/spell highlights and seeds the user_notes payload. */
+  playStyle: PlayStyle;
+  /**
+   * Per-field lock map for the climb. Keys: `stats`, `spells`, and
+   * `asi:<level>` per ASI window. Default `true` (locked).
+   */
+  locks: Record<string, boolean>;
 }
 
 export function gainedLevels(from: number, to: number): number[] {

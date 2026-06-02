@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronUp, Star, BookOpen } from "lucide-react";
+import { ChevronUp, Sparkles, Star, BookOpen } from "lucide-react";
 import { Chip, Input, cn } from "@tomois/ui";
 import {
   ABILITIES,
@@ -8,6 +8,7 @@ import {
   ASI_LEVELS,
   type Ability,
 } from "@/lib/srd";
+import { recommendedAbilities } from "@/lib/playstyle";
 import {
   crossedAsiLevels,
   type AsiPick,
@@ -32,20 +33,31 @@ export function ASIStep({
     set({ asi: { ...state.asi, [level]: pick } });
   }
 
+  const rec = recommendedAbilities(state.playStyle, state.charClass);
+
   return (
     <div className="space-y-4">
       {windows.map((lvl) => {
         const pick = state.asi[lvl];
+        const matches = pickMatchesStance(pick, rec.primary);
         return (
           <div
             key={lvl}
             className="rounded-md border border-tavern-stone/30 bg-tavern-night/50 p-4"
           >
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-2">
               <span className="font-heading text-[0.65rem] uppercase tracking-[0.25em] text-tavern-parchment/65">
                 ASI · level {lvl}
               </span>
-              {pickSummary(pick)}
+              <div className="flex items-center gap-2">
+                {matches && (
+                  <Chip tone="active">
+                    <Sparkles className="mr-1 inline h-3 w-3" />
+                    matches your {state.playStyle}
+                  </Chip>
+                )}
+                {pickSummary(pick)}
+              </div>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-3">
@@ -207,6 +219,18 @@ function AbilityPicker({
       </div>
     </div>
   );
+}
+
+function pickMatchesStance(
+  pick: AsiPick | undefined,
+  recommended: Ability | undefined,
+): boolean {
+  if (!pick || !recommended) return false;
+  if (pick.mode === "single") return pick.singleAbility === recommended;
+  if (pick.mode === "split") {
+    return pick.splitA === recommended || pick.splitB === recommended;
+  }
+  return false;
 }
 
 function pickSummary(pick: AsiPick | undefined) {

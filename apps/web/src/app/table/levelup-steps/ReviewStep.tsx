@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { ChevronRight, Quote } from "lucide-react";
 import { Card, Chip, Label, Textarea } from "@tomois/ui";
 import { ABILITIES, ABILITY_LABEL } from "@/lib/srd";
+import { FieldLock } from "@/components/wizard/FieldLock";
 import { applyAsiToStats, type LevelUpState } from "./types";
 
 /**
@@ -97,6 +98,29 @@ export function ReviewStep({
         )}
       </Card>
 
+      <div className="grid gap-2 sm:grid-cols-2">
+        <LockRow
+          label="Ability scores"
+          hint="Locked = your ASI picks are kept exactly."
+          locked={state.locks.stats ?? true}
+          onToggle={() =>
+            set({
+              locks: { ...state.locks, stats: !(state.locks.stats ?? true) },
+            })
+          }
+        />
+        <LockRow
+          label="Spells"
+          hint="Locked = the fire can't swap your picks."
+          locked={state.locks.spells ?? true}
+          onToggle={() =>
+            set({
+              locks: { ...state.locks, spells: !(state.locks.spells ?? true) },
+            })
+          }
+        />
+      </div>
+
       <div>
         <Label htmlFor="levelup-notes">
           <Quote className="mr-1 inline h-3 w-3" />
@@ -110,6 +134,32 @@ export function ReviewStep({
           onChange={(e) => set({ notes: e.target.value })}
         />
       </div>
+    </div>
+  );
+}
+
+function LockRow({
+  label,
+  hint,
+  locked,
+  onToggle,
+}: {
+  label: string;
+  hint: string;
+  locked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-tavern-stone/30 bg-tavern-night/40 p-2">
+      <div className="flex-1">
+        <div className="font-heading text-[0.65rem] uppercase tracking-[0.25em] text-tavern-parchment/75">
+          {label}
+        </div>
+        <p className="mt-0.5 text-[0.65rem] italic text-tavern-parchment/55">
+          {hint}
+        </p>
+      </div>
+      <FieldLock locked={locked} onToggle={onToggle} label={label} size="sm" />
     </div>
   );
 }

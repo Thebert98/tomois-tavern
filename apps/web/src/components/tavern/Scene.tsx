@@ -10,7 +10,10 @@ import { playSfx } from "@/lib/sfx";
 /**
  * The home of the tavern. Two layouts:
  *   - Mobile/tablet (<md): a vertical scroll of RoomCard signs.
- *   - Desktop (>=md): the immersive single-screen hotspot scene.
+ *   - Desktop (>=md): the immersive single-screen view, backed by the
+ *     painted panorama at `/tavern/hearth.webp` (committed once via
+ *     services/workshop/scripts/generate_tavern_art.py). Hotspot
+ *     positions in rooms.ts are tuned to the painted props.
  */
 export function Scene() {
   const router = useRouter();
@@ -50,26 +53,33 @@ export function Scene() {
         </footer>
       </section>
 
-      {/* ---- Desktop: immersive scene ---- */}
+      {/* ---- Desktop: painted, immersive scene ---- */}
       <section className="vignette relative hidden h-[100svh] w-full overflow-hidden md:block">
-        {/* Layered candlelight */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_70%,rgba(240,160,80,0.35),transparent_55%),radial-gradient(circle_at_25%_45%,rgba(212,175,55,0.12),transparent_45%),radial-gradient(circle_at_75%_45%,rgba(135,35,34,0.1),transparent_45%),linear-gradient(180deg,#0d0a08_0%,#1c120a_60%,#0a0604_100%)]" />
-
-        {/* Faint floor planks */}
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 opacity-30"
-          style={{
-            background:
-              "repeating-linear-gradient(90deg, transparent 0px, transparent 60px, rgba(59, 38, 26, 0.6) 60px, rgba(59, 38, 26, 0.6) 62px)",
-          }}
+        {/* The panorama itself */}
+        <img
+          src="/tavern/hearth.webp"
+          alt=""
+          aria-hidden
+          className="absolute inset-0 h-full w-full object-cover"
         />
+
+        {/* Soft candlelight wash layered over the painting — keeps the
+            existing color story without overpowering the art. */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_60%,rgba(240,160,80,0.18),transparent_55%),radial-gradient(circle_at_25%_45%,rgba(212,175,55,0.08),transparent_45%)]" />
+
+        {/* Bottom legibility gradient so hotspot tooltips remain readable
+            against bright art near the foreground. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-tavern-night/85 via-tavern-night/35 to-transparent" />
+
+        {/* Top legibility gradient for the credit line. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-tavern-night/70 to-transparent" />
 
         {/* Drifting dust motes */}
         <Motes />
 
         {/* Marquee */}
         <header className="absolute inset-x-0 top-16 z-10 text-center">
-          <p className="font-heading text-[0.65rem] uppercase tracking-[0.5em] text-tavern-parchment/45">
+          <p className="font-heading text-[0.65rem] uppercase tracking-[0.5em] text-tavern-parchment/55">
             choose a place
           </p>
         </header>
@@ -89,8 +99,9 @@ export function Scene() {
           />
         ))}
 
-        <footer className="absolute inset-x-0 bottom-3 z-10 text-center text-[0.65rem] uppercase tracking-[0.4em] text-tavern-parchment/40">
-          click a place to enter
+        <footer className="absolute inset-x-0 bottom-3 z-10 flex items-center justify-between gap-2 px-6 text-[0.55rem] uppercase tracking-[0.3em] text-tavern-parchment/35">
+          <span>click a place to enter</span>
+          <span>panorama painted by fal.ai · flux pro</span>
         </footer>
       </section>
     </main>

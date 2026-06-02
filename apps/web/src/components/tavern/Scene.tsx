@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Hotspot } from "./Hotspot";
 import { RoomCard } from "./RoomCard";
 import { Motes } from "./Motes";
+import { Patrons } from "./Patrons";
+import { Lanterns } from "./Lanterns";
 import { ROOMS } from "./rooms";
 import { playSfx } from "@/lib/sfx";
 
@@ -17,6 +20,13 @@ import { playSfx } from "@/lib/sfx";
  */
 export function Scene() {
   const router = useRouter();
+
+  // One-shot door creak as the traveller "steps into" the tavern. Gated by
+  // the same ambient-mute flag as the rest of SFX (no-op while muted or
+  // when the audio file isn't present).
+  useEffect(() => {
+    void playSfx("door");
+  }, []);
 
   function enter(href: string) {
     void playSfx("door");
@@ -73,6 +83,12 @@ export function Scene() {
 
         {/* Top legibility gradient for the credit line. */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-tavern-night/70 to-transparent" />
+
+        {/* Flickering lantern + candle glows over the painted fixtures */}
+        <Lanterns />
+
+        {/* Background patrons drifting at the tables */}
+        <Patrons />
 
         {/* Drifting dust motes */}
         <Motes />

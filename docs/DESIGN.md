@@ -209,13 +209,25 @@ gallery grids span full content width.
 
 ## 9. Per-room sensory palette
 
+The tavern home (`/`) is now a painted first-person panorama
+(`/tavern/hearth.webp`, ~290 KB). Hotspot positions in
+`apps/web/src/components/tavern/rooms.ts` are tuned to the painted props
+(hearth center, gilded mirror left, stage right, oak table front-left,
+parchments right-back). Two CSS-only decorations layer on top: animated
+patron silhouettes (`Patrons.tsx`) and flickering lantern glows
+(`Lanterns.tsx`). To re-generate the panorama (e.g. for a different vibe
+or season), see `apps/web/public/tavern/LICENSE.md`.
+
+The two rooms whose responsibilities swapped (Fireplace ↔ Round Table)
+keep the colors below, but their copy + tooltip flavor changed:
+
 | Room | Anchor color | Sound cue (when audio on) | Tooltip flavor |
 |---|---|---|---|
-| Tavern scene | `tavern-fire` everywhere | ambient loop | "Step in, traveller." |
-| Fireplace | `tavern-ember` (warmth) | door creak on enter | "Stoke the embers — roll a hero." |
+| Tavern scene | `tavern-fire` everywhere | ambient loop + door creak on mount | "Step in, traveller." |
+| Fireplace (new-hero forge) | `tavern-ember` (warmth) | embers pop on successful roll | "Speak a name — a hero steps from the fire." |
 | Magic Mirror | `tavern-gold` (frame) | gentle chime on portrait ready | "Look long enough, and someone looks back." |
 | Bard's Stage | `tavern-ale` (amber) | a single lute pluck on enter | "A song for every feat." |
-| Round Table | `tavern-oak` (table wood) | mug clink on row hover | "Your roster of heroes." |
+| Round Table (manage + level up) | `tavern-oak` (table wood) | embers pop on level-up complete | "Your roster — edit freely, climb to the next chapter." |
 | Notice Board | `tavern-parchment` (paper) | scroll unfurl | "Friends, parties, open seats." |
 
 Each room uses its anchor color for: the room title underline, the primary

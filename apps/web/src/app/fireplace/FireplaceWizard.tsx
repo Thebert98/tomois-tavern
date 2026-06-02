@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { AlertTriangle, Flame } from "lucide-react";
-import { Card, useToast } from "@tomois/ui";
+import { AlertTriangle, Dices, Flame } from "lucide-react";
+import { Button, Card, useToast } from "@tomois/ui";
 import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
 import { reroll } from "@/lib/api";
 import { sheetFromPicks } from "@/lib/sheet";
@@ -94,8 +94,8 @@ export function FireplaceWizard() {
     {
       id: "identity",
       title: "Who are you?",
-      flavor: "Pick a name and a calling. Race and background are optional — the fire fills the rest.",
-      isValid: (s) => s.name.trim().length > 0 && s.char_class.trim().length > 0,
+      flavor: "Leave any field empty (and free) to let the fire decide it.",
+      optional: true,
       render: (state, set) => <IdentityStep state={state} set={set} />,
     },
     {
@@ -115,8 +115,8 @@ export function FireplaceWizard() {
     {
       id: "stats",
       title: "What sharpens your edge?",
-      flavor: "Pick a method, then place the numbers. Race bonuses are layered on top.",
-      isValid: (s) => statsComplete(s),
+      flavor: "Optional — skip to let the fire roll your stats, or pick a method and place the numbers.",
+      optional: true,
       render: (state, set) => <StatsStep state={state} set={set} />,
     },
     {
@@ -139,21 +139,20 @@ export function FireplaceWizard() {
 
   async function complete(state: FireplaceState) {
     const name = state.name.trim();
-    if (!name) {
-      toast("Give the hero a name first.", { tone: "error" });
-      return;
-    }
+    // Empty name is allowed — the row uses a placeholder and the AI fills
+    // sheet.name (which the Round Table edit modal can sync to the row later).
+    const rowName = name || "Unnamed Hero";
     setError(null);
     setStage("rolling");
     try {
-      const created = await reroll.createCharacter(name);
+      const created = await reroll.createCharacter(rowName);
       const resolvedStats = statsComplete(state)
         ? applyRaceASI(state.race, state.stats)
         : null;
       const spellsPicked =
         isCaster(state.char_class) && !state.autoSpells && state.spells.length > 0;
       const picks: Record<string, unknown> = {
-        name,
+        name: name || null,
         race: state.race,
         char_class: state.char_class,
         background: state.background,
@@ -170,7 +169,33 @@ export function FireplaceWizard() {
       const vibePayload = (prefix + state.vibe.trim()).trim();
       await reroll.generate(created.id, vibePayload);
       void playSfx("embers");
-      toast(`${name} steps from the fire.`, { tone: "success" });
+      toast(`${name || "A hero"} steps from the fire.`, { tone: "success" });
+      router.push(`/table?character=${created.id}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
+      if (msg.includes("429")) {
+        setError(
+          "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
+        );
+      } else {
+        setError(msg.replace(/^\d+:\s*/, ""));
+      }
+      setStage("idle");
+    }
+  }
+
+  async function randomizeAll() {
+    if (stage === "rolling") return;
+    setError(null);
+    setStage("rolling");
+    try {
+      const created = await reroll.createCharacter("Unnamed Hero");
+      // No sheet patches — every field stays unlocked, so the LLM picks
+      // everything from scratch. The play-style + vibe still seed the prompt.
+      const prefix = playStylePromptPrefix(INITIAL.playStyle);
+      await reroll.generate(created.id, prefix.trim());
+      void playSfx("embers");
+      toast("A hero steps from the fire.", { tone: "success" });
       router.push(`/table?character=${created.id}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
@@ -189,6 +214,21 @@ export function FireplaceWizard() {
     <div className="mx-auto max-w-2xl">
       <Card className="overflow-hidden">
         <Hearth live={stage === "rolling"} />
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-tavern-stone/25 bg-tavern-night/40 px-3 py-2">
+          <span className="text-xs italic text-tavern-parchment/60">
+            Want to skip the picks?
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={randomizeAll}
+            disabled={stage === "rolling"}
+          >
+            <Dices className="h-3.5 w-3.5" />
+            {stage === "rolling" ? "rolling…" : "let the fire roll it all"}
+          </Button>
+        </div>
 
         <div className="mt-6">
           <Wizard

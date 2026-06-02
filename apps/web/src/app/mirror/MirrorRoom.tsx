@@ -24,21 +24,12 @@ import { reroll, workshop, type PortraitDTO } from "@/lib/api";
 import { PortraitProgress } from "@/components/PortraitProgress";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { playSfx } from "@/lib/sfx";
+import { buildPortraitPrompt } from "@/lib/portraitPrompt";
 
 interface Character {
   id: string;
   name: string;
   sheet: Record<string, unknown>;
-}
-
-function characterFlavor(sheet: Record<string, unknown>): string {
-  const pick = (key: string) => {
-    const f = sheet[key] as { value?: unknown } | undefined;
-    return typeof f?.value === "string" ? f.value : "";
-  };
-  return [pick("race"), pick("char_class"), pick("background"), pick("alignment")]
-    .filter(Boolean)
-    .join(", ");
 }
 
 export function MirrorRoom() {
@@ -73,12 +64,7 @@ export function MirrorRoom() {
       setInFlight(null);
       return;
     }
-    const flavor = characterFlavor(chosen.sheet);
-    setPrompt(
-      `Portrait of ${chosen.name}${flavor ? `, ${flavor}` : ""}. ` +
-        "Painterly fantasy oil-painting style, warm tavern lighting, " +
-        "dramatic shadows, head-and-shoulders composition.",
-    );
+    setPrompt(buildPortraitPrompt({ name: chosen.name, sheet: chosen.sheet }));
   }, [chosen]);
 
   useEffect(() => {
@@ -213,11 +199,25 @@ export function MirrorRoom() {
                 </Label>
                 <Textarea
                   id="mirror-prompt"
-                  rows={5}
+                  rows={8}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="A weather-beaten half-elven ranger with silver braids…"
                 />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPrompt(
+                      buildPortraitPrompt({
+                        name: chosen.name,
+                        sheet: chosen.sheet,
+                      }),
+                    )
+                  }
+                  className="mt-1 font-heading text-[0.6rem] uppercase tracking-[0.25em] text-tavern-parchment/55 hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+                >
+                  ↺ rebuild from sheet
+                </button>
               </div>
 
               <Button

@@ -1,14 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { UserPlus, Flame } from "lucide-react";
+import { Flame } from "lucide-react";
 import {
-  Button,
   ConfirmDialog,
   EmptyState,
-  Input,
-  Label,
-  Modal,
   Skeleton,
   useToast,
 } from "@tomois/ui";
@@ -18,7 +15,6 @@ import {
   type PortraitDTO,
   type RerollCharacter,
 } from "@/lib/api";
-import { playSfx } from "@/lib/sfx";
 import { CharacterCard } from "./CharacterCard";
 import { EditCharacterModal } from "./EditCharacterModal";
 import { LevelUpModal } from "./LevelUpModal";
@@ -32,8 +28,6 @@ export function RoundTable() {
   );
   const [editing, setEditing] = useState<RerollCharacter | null>(null);
   const [levelUp, setLevelUp] = useState<RerollCharacter | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
 
   async function refresh() {
     const [chars, ports] = await Promise.all([
@@ -56,22 +50,6 @@ export function RoundTable() {
     return map;
   }, [portraits]);
 
-  async function createHero() {
-    const name = newName.trim() || "Untitled";
-    try {
-      await reroll.createCharacter(name);
-      void playSfx("embers");
-      toast("A new hero takes a seat at the table.", { tone: "success" });
-      setCreating(false);
-      setNewName("");
-      await refresh();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't seat the hero.", {
-        tone: "error",
-      });
-    }
-  }
-
   async function deleteHero(c: RerollCharacter) {
     try {
       await reroll.deleteCharacter(c.id);
@@ -84,23 +62,19 @@ export function RoundTable() {
     }
   }
 
-  function onEdit(c: RerollCharacter) {
-    setEditing(c);
-  }
-  function onLevelUp(c: RerollCharacter) {
-    setLevelUp(c);
-  }
-
   return (
     <>
       <div className="mb-6 flex items-center justify-between gap-2">
         <p className="text-sm italic text-tavern-parchment/65">
           Every hero you&apos;ve seated, across every campaign.
         </p>
-        <Button onClick={() => setCreating(true)}>
-          <UserPlus className="h-4 w-4" />
-          seat a new hero
-        </Button>
+        <Link
+          href="/fireplace"
+          className="inline-flex items-center gap-2 rounded-lg bg-tavern-ember px-3.5 py-2 font-heading text-xs uppercase tracking-[0.22em] text-tavern-night shadow-[0_8px_24px_-12px_rgba(240,160,80,0.65)] transition-colors hover:bg-tavern-fire focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold focus-visible:ring-offset-2 focus-visible:ring-offset-tavern-night"
+        >
+          <Flame className="h-4 w-4" />
+          roll a new hero
+        </Link>
       </div>
 
       {characters === null ? (
@@ -113,12 +87,15 @@ export function RoundTable() {
         <EmptyState
           icon={<Flame className="h-7 w-7" />}
           title="The table is empty"
-          description="No heroes yet — seat one and they'll appear here."
+          description="No heroes yet — visit the Fireplace and stoke the embers."
           action={
-            <Button onClick={() => setCreating(true)}>
-              <UserPlus className="h-4 w-4" />
-              seat the first hero
-            </Button>
+            <Link
+              href="/fireplace"
+              className="inline-flex items-center gap-2 rounded-lg bg-tavern-ember px-3.5 py-2 font-heading text-xs uppercase tracking-[0.22em] text-tavern-night transition-colors hover:bg-tavern-fire focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+            >
+              <Flame className="h-4 w-4" />
+              roll the first hero
+            </Link>
           }
         />
       ) : (
@@ -128,8 +105,8 @@ export function RoundTable() {
               key={c.id}
               character={c}
               portrait={portraitByCharacter.get(c.id) ?? null}
-              onEdit={() => onEdit(c)}
-              onLevelUp={() => onLevelUp(c)}
+              onEdit={() => setEditing(c)}
+              onLevelUp={() => setLevelUp(c)}
               onBanish={() => setConfirmDelete(c)}
             />
           ))}
@@ -159,32 +136,6 @@ export function RoundTable() {
         onClose={() => setLevelUp(null)}
         onChanged={() => void refresh()}
       />
-
-      <Modal
-        open={creating}
-        onClose={() => setCreating(false)}
-        title="Seat a new hero"
-        description="A new sheet is opened. Roll the rest at the Fireplace."
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setCreating(false)}>
-              cancel
-            </Button>
-            <Button onClick={createHero}>seat them</Button>
-          </>
-        }
-      >
-        <div>
-          <Label htmlFor="new-hero-name">Name</Label>
-          <Input
-            id="new-hero-name"
-            placeholder="e.g. Kael Stormbreaker"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            autoFocus
-          />
-        </div>
-      </Modal>
     </>
   );
 }

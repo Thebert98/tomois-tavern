@@ -236,6 +236,28 @@ icon.
 
 ---
 
+## 11. Wizard pattern
+
+Two flows use the same multi-step wizard primitive (`apps/web/src/components/wizard/Wizard.tsx`):
+
+- **Fireplace** — new-hero forge. Steps: Identity → Alignment+Level → Stats → Spells (casters) → Seal.
+- **Round Table → Level up** — guided ascent. Steps: Target → Hit dice → ASI/feat → Spells (casters) → Review.
+
+Conventions every wizard follows:
+
+- **Step shape** — one Card-styled panel per step; title (heading uppercase tracking-[0.25em] gold) + flavor (italic parchment/65) + body. Bodies use the same `@tomois/ui` primitives as everywhere else.
+- **Progress strip + counter** — a `bg-tavern-fire` segment marks the active step; `bg-tavern-gold` marks completed; `bg-tavern-stone/25` upcoming. "step N of M" sits below.
+- **Footer** — `back` (ghost, left) + optional `skip` (secondary, right) + `next` / final-label (primary, right). `submitting` disables all three.
+- **Conditional steps** — every step accepts `shouldShow(state)`; the Wizard hides irrelevant steps from the progress strip and skips them on Next/Back. Used for caster-only spell steps and ASI windows that aren't crossed.
+- **Validation** — `isValid(state)` gates the Next button per step. Required steps stay disabled until satisfied; optional steps surface a Skip button instead.
+- **Motion** — each step enters with the `settle` variant (`apps/web/src/lib/motion.ts`). `prefers-reduced-motion` is honored at the global level.
+- **State** — the wizard owns the shared state object; steps receive `(state, set)` and patch via `set(partial)`. `onComplete(finalState)` may be async; the wizard disables its footer during the pending promise.
+- **Locks on submit** — both wizards convert their picks into `{value, locked: true}` cells via `lockedSheetFrom` (`apps/web/src/lib/sheet.ts`) and `PUT /characters/{id}` before `/generate`. The backend's `merge_preserving_locks` defensively re-asserts the locks; the SRD validator gates legality. No new endpoints needed.
+
+See `/design` for a live demo of the primitive.
+
+---
+
 ## 10. Voice glossary
 
 For consistency, use the same noun for each concept everywhere.
@@ -254,6 +276,6 @@ For consistency, use the same noun for each concept everywhere.
 
 ---
 
-*Last updated 2026-06-01. When adding a new feature, update this file
+*Last updated 2026-06-02. When adding a new feature, update this file
 in the same PR. The book is the source of truth; conflicts go in the
 book's favor, then the implementation gets fixed.*

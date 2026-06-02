@@ -108,6 +108,14 @@ Before opening the phase's PR:
 - [x] PR 6 — Fireplace = new-hero forge
 - [x] PR 7 — Polish + audit (see Audit results 2026-06-02 below)
 
+### Fireplace creation wizard + interactive level-up (2026-06-02)
+- [x] PR 1 — expand `lib/srd.ts` (races, backgrounds, alignments, spells, helpers) + extract `lib/sheet.ts`
+- [x] PR 2 — wizard primitive + Identity + Alignment/Level steps
+- [x] PR 3 — Stats step (standard array / point buy / 4d6-drop-lowest)
+- [x] PR 4 — Spells step (caster-only) + Seal step; wizard gains `shouldShow`
+- [x] PR 5 — LevelUpWizard (Target / Hit dice / ASI / Spells / Review) replaces LevelUpModal
+- [x] PR 6 — DESIGN.md §11 (wizard pattern) + `/design` demo + audit
+
 ## Audit results (2026-06-02)
 
 **Secrets — clean.**

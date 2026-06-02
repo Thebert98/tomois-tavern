@@ -41,7 +41,7 @@ export function RoomCard({
         <motion.div
           whileHover={{ scale: 1.05 }}
           className={cn(
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-tavern-gold/30 bg-tavern-night/60 group-hover:flicker",
+            "breath flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-tavern-gold/30 bg-tavern-night/60 group-hover:flicker",
             accentClass,
           )}
         >

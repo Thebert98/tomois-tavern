@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import {
   UserPlus,
   Check,
@@ -25,6 +26,7 @@ import {
   Skeleton,
   useToast,
 } from "@tomois/ui";
+import { unfurl } from "@/lib/motion";
 import {
   friends,
   parties,
@@ -172,8 +174,8 @@ function FriendsPanel() {
         <>
           {grouped.incoming.length > 0 && (
             <FriendGroup title="Awaiting your answer">
-              {grouped.incoming.map((f) => (
-                <FriendRow key={f.other_user_id} friend={f}>
+              {grouped.incoming.map((f, i) => (
+                <FriendRow key={f.other_user_id} friend={f} index={i}>
                   <Button size="sm" onClick={() => accept(f)}>
                     <Check className="h-3 w-3" />
                     accept
@@ -192,8 +194,8 @@ function FriendsPanel() {
           )}
           {grouped.outgoing.length > 0 && (
             <FriendGroup title="Awaiting their answer">
-              {grouped.outgoing.map((f) => (
-                <FriendRow key={f.other_user_id} friend={f}>
+              {grouped.outgoing.map((f, i) => (
+                <FriendRow key={f.other_user_id} friend={f} index={i}>
                   <Chip tone="muted">pending</Chip>
                   <Button
                     size="sm"
@@ -209,8 +211,8 @@ function FriendsPanel() {
           )}
           {grouped.accepted.length > 0 && (
             <FriendGroup title="At the table">
-              {grouped.accepted.map((f) => (
-                <FriendRow key={f.other_user_id} friend={f}>
+              {grouped.accepted.map((f, i) => (
+                <FriendRow key={f.other_user_id} friend={f} index={i}>
                   <button
                     type="button"
                     onClick={() => setConfirmRemove(f)}
@@ -261,19 +263,27 @@ function FriendGroup({
 function FriendRow({
   friend,
   children,
+  index = 0,
 }: {
   friend: FriendDTO;
   children: React.ReactNode;
+  index?: number;
 }) {
   const label = friend.other_email ?? friend.other_user_id;
   return (
-    <li className="flex items-center gap-3 rounded-lg border border-tavern-stone/30 bg-tavern-night/50 px-3 py-2">
+    <motion.li
+      variants={unfurl}
+      initial="hidden"
+      animate="visible"
+      custom={index}
+      className="flex items-center gap-3 rounded-lg border border-tavern-stone/30 bg-tavern-night/50 px-3 py-2"
+    >
       <Avatar size="sm" name={label} />
       <span className="flex-1 truncate text-sm text-tavern-parchment">
         {label}
       </span>
       <div className="flex items-center gap-1">{children}</div>
-    </li>
+    </motion.li>
   );
 }
 

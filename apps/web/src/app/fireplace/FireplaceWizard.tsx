@@ -18,6 +18,8 @@ import {
 } from "@/lib/srd";
 import { playStylePromptPrefix, type PlayStyle } from "@/lib/playstyle";
 import { frameHeroSeed, pickHeroSeed } from "@/lib/heroSeeds";
+import { cascadePicks } from "@/lib/cascade";
+import { namingConventionFor } from "@/lib/heritage";
 import { IdentityStep } from "./steps/IdentityStep";
 import { AlignmentLevelStep } from "./steps/AlignmentLevelStep";
 import { PlayStyleStep } from "./steps/PlayStyleStep";
@@ -223,18 +225,27 @@ export function FireplaceWizard() {
     try {
       const created = await reroll.createCharacter(rowName);
       setRolledId(created.id);
-      const resolvedStats = statsComplete(state)
-        ? applyRaceASI(state.race, state.stats)
-        : null;
-      const spellsPicked =
-        isCaster(state.char_class) && !state.autoSpells && state.spells.length > 0;
-      const picks: Record<string, unknown> = {
-        name: typedName || null,
+      // Cascade-fill any structural slot the player left empty. User picks
+      // anchor the cascade; affinity weights coherently pick the rest.
+      const anchors = cascadePicks({
         race: state.race,
-        char_class: state.char_class,
+        charClass: state.char_class,
         background: state.background,
         alignment: state.alignment,
         level: state.level !== 1 ? state.level : null,
+      });
+      const resolvedStats = statsComplete(state)
+        ? applyRaceASI(anchors.race, state.stats)
+        : null;
+      const spellsPicked =
+        isCaster(anchors.charClass) && !state.autoSpells && state.spells.length > 0;
+      const picks: Record<string, unknown> = {
+        name: typedName || null,
+        race: anchors.race,
+        char_class: anchors.charClass,
+        background: anchors.background,
+        alignment: anchors.alignment,
+        level: anchors.level !== 1 ? anchors.level : null,
         stats: resolvedStats,
         spells: spellsPicked ? state.spells : null,
       };
@@ -250,12 +261,19 @@ export function FireplaceWizard() {
         await reroll.update(created.id, { sheet });
       }
       const prefix = playStylePromptPrefix(state.playStyle);
+      // Heritage-aware naming hint keyed to the resolved race (user pick or
+      // cascade-picked). The LLM is good at producing tradition-accurate
+      // names once it knows the convention.
+      const naming = namingConventionFor(anchors.race);
       // When the player didn't write a vibe, inject a random hero seed so
       // the LLM has something specific to riff on (without it, the model
       // collapses to the same handful of default archetypes).
       const userVibe = state.vibe.trim();
       const seed = userVibe ? "" : frameHeroSeed(pickHeroSeed(2));
-      const vibePayload = [prefix, userVibe, seed].filter(Boolean).join(" ").trim();
+      const vibePayload = [prefix, naming, userVibe, seed]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
       const result = await reroll.generate(created.id, vibePayload);
       const hero = await settleHero(
         created.id,
@@ -280,15 +298,29 @@ export function FireplaceWizard() {
       const rowName = workingTitle();
       const created = await reroll.createCharacter(rowName);
       setRolledId(created.id);
-      // Free the name field explicitly (see complete()'s comment for why)
-      // and otherwise leave the sheet untouched so the LLM picks everything.
+      // Pure-random run — cascade fills every anchor with no user inputs.
+      const anchors = cascadePicks({});
+      // Seed the sheet with the cascade picks (free), so the LLM honors the
+      // chosen race/class/etc as strong suggestions while still being free
+      // to revise if something else conflicts. The name field is explicitly
+      // null + free so the LLM produces a fresh, heritage-coherent name.
       await reroll.update(created.id, {
-        sheet: { name: { value: null, locked: false } },
+        sheet: {
+          name: { value: null, locked: false },
+          race: { value: anchors.race, locked: false },
+          char_class: { value: anchors.charClass, locked: false },
+          background: { value: anchors.background, locked: false },
+          alignment: { value: anchors.alignment, locked: false },
+          ...(anchors.level !== 1
+            ? { level: { value: anchors.level, locked: false } }
+            : {}),
+        },
       });
       const prefix = playStylePromptPrefix(INITIAL.playStyle);
+      const naming = namingConventionFor(anchors.race);
       // Randomize always gets a hero seed — there's no user vibe to anchor it.
       const seed = frameHeroSeed(pickHeroSeed(2));
-      const vibePayload = [prefix, seed].filter(Boolean).join(" ").trim();
+      const vibePayload = [prefix, naming, seed].filter(Boolean).join(" ").trim();
       const result = await reroll.generate(created.id, vibePayload);
       const hero = await settleHero(
         created.id,

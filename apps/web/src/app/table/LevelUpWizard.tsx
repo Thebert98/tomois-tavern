@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Sparkles } from "lucide-react";
+import { AlertTriangle, Dices, Sparkles } from "lucide-react";
 import {
   Button,
   Card,
@@ -194,22 +194,18 @@ export function LevelUpWizard({
     return slotGrew || cantripsGrew || spellsGrew;
   }
 
-  function asiComplete(state: LevelUpState): boolean {
+  // HP / ASI steps are optional — the fire fills in any picks the player
+  // skips. Used in submit-time logic, not as a Next-button gate.
+  function asiHasPartialPick(state: LevelUpState): boolean {
     const windows = crossedAsiLevels(state.fromLevel, state.target, ASI_LEVELS);
     for (const lvl of windows) {
       const pick = state.asi[lvl];
-      if (!pick) return false;
-      if (pick.mode === "single" && !pick.singleAbility) return false;
-      if (pick.mode === "split" && (!pick.splitA || !pick.splitB)) return false;
-      if (pick.mode === "feat" && !(pick.featName?.trim())) return false;
+      if (!pick) continue;
+      if (pick.mode === "single" && !pick.singleAbility) return true;
+      if (pick.mode === "split" && (!pick.splitA || !pick.splitB)) return true;
+      if (pick.mode === "feat" && !(pick.featName?.trim())) return true;
     }
-    return true;
-  }
-  function hpComplete(state: LevelUpState): boolean {
-    for (let lvl = state.fromLevel + 1; lvl <= state.target; lvl++) {
-      if (!state.hp[lvl]) return false;
-    }
-    return true;
+    return false;
   }
 
   const steps: WizardStep<LevelUpState>[] = [
@@ -229,16 +225,19 @@ export function LevelUpWizard({
     {
       id: "hp",
       title: "How hardy is each step?",
-      flavor: "Max, average, or roll your hit die for every level gained.",
-      isValid: hpComplete,
+      flavor: "Skip to let the fire roll HP; or pick max / average / roll per level.",
+      optional: true,
       shouldShow: showHpStep,
       render: (state, set) => <HitDiceStep state={state} set={set} />,
     },
     {
       id: "asi",
       title: "Where do you sharpen?",
-      flavor: "Bump abilities or take a feat at each ASI window.",
-      isValid: asiComplete,
+      flavor: "Skip to let the fire pick — or bump abilities / take a feat at each ASI window.",
+      // Only block Next if the player started a pick but left it incomplete
+      // (e.g. picked "split" but didn't choose the second ability).
+      isValid: (s) => !asiHasPartialPick(s),
+      optional: true,
       shouldShow: showAsiStep,
       render: (state, set) => <ASIStep state={state} set={set} />,
     },
@@ -268,12 +267,21 @@ export function LevelUpWizard({
       const mergedSpells = Array.from(
         new Set([...state.currentSpells, ...state.spellsAdded]),
       );
+      const hasAsiPicks = Object.keys(state.asi).length > 0;
+      const hasSpellPicks = state.spellsAdded.length > 0;
+      // Only lock the stats / spells fields if the player actually made
+      // picks — otherwise leave them free so the LLM applies the climb.
+      const effectiveLocks: Record<string, boolean> = {
+        ...state.locks,
+        stats: hasAsiPicks ? (state.locks.stats ?? true) : false,
+        spells: hasSpellPicks ? (state.locks.spells ?? true) : false,
+      };
       const patched = patchedSheet(
         character.sheet as Sheet,
         state.target,
         finalStats,
         mergedSpells,
-        state.locks,
+        effectiveLocks,
       );
       await reroll.update(character.id, { sheet: patched });
 
@@ -314,6 +322,42 @@ export function LevelUpWizard({
     }
   }
 
+  async function randomizeLevelUp() {
+    if (!character) return;
+    setErrors([]);
+    setSubmitError(null);
+    try {
+      const patched = patchedSheet(
+        character.sheet as Sheet,
+        initial.target,
+        initial.baseStats,
+        initial.currentSpells,
+        { stats: false, spells: false },
+      );
+      await reroll.update(character.id, { sheet: patched });
+      const note = `Climbing from level ${initial.fromLevel} to ${initial.target}. Let the fire decide what changes.`;
+      const result = await reroll.generate(character.id, note);
+      setErrors(result.validation_errors ?? []);
+      void playSfx("embers");
+      if (result.validation_errors?.length) {
+        toast("Re-rolled — but the rules object to a detail.", { tone: "error" });
+      } else {
+        toast(`Your hero rises to level ${initial.target}.`, { tone: "success" });
+        onChanged();
+        onClose();
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
+      if (msg.includes("429")) {
+        setSubmitError(
+          "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
+        );
+      } else {
+        setSubmitError(msg.replace(/^\d+:\s*/, ""));
+      }
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -329,9 +373,15 @@ export function LevelUpWizard({
           : undefined
       }
       footer={
-        <Button variant="ghost" onClick={onClose}>
-          close
-        </Button>
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            close
+          </Button>
+          <Button variant="secondary" onClick={randomizeLevelUp}>
+            <Dices className="h-4 w-4" />
+            let the fire roll it
+          </Button>
+        </>
       }
     >
       <div className="space-y-4">

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { UserPlus, Flame } from "lucide-react";
 import {
@@ -21,15 +20,16 @@ import {
 } from "@/lib/api";
 import { playSfx } from "@/lib/sfx";
 import { CharacterCard } from "./CharacterCard";
+import { EditCharacterModal } from "./EditCharacterModal";
 
 export function RoundTable() {
-  const router = useRouter();
   const { toast } = useToast();
   const [characters, setCharacters] = useState<RerollCharacter[] | null>(null);
   const [portraits, setPortraits] = useState<PortraitDTO[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<RerollCharacter | null>(
     null,
   );
+  const [editing, setEditing] = useState<RerollCharacter | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
 
@@ -82,11 +82,9 @@ export function RoundTable() {
     }
   }
 
-  // Edit + level-up land properly in PR 4 / PR 5. For this PR the chips are
-  // present + clickable; edit routes to the existing Fireplace editor so
-  // nothing regresses, level-up surfaces a friendly placeholder.
+  // edit opens the in-room modal; level-up wires in PR 5.
   function onEdit(c: RerollCharacter) {
-    router.push(`/fireplace?character=${c.id}`);
+    setEditing(c);
   }
   function onLevelUp(_c: RerollCharacter) {
     toast("The next chapter is being written — coming soon.", {
@@ -149,6 +147,12 @@ export function RoundTable() {
         description="The sheet, portraits, and version history are wiped. This cannot be undone."
         confirmLabel="Banish"
         cancelLabel="Keep"
+      />
+
+      <EditCharacterModal
+        character={editing}
+        onClose={() => setEditing(null)}
+        onChanged={() => void refresh()}
       />
 
       <Modal

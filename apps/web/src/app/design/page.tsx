@@ -35,6 +35,7 @@ import { PlayStylePicker } from "@/components/wizard/PlayStylePicker";
 import type { PlayStyle } from "@/lib/playstyle";
 import { RollingDialog, type RollingStage } from "@/components/RollingDialog";
 import { heritageRaces, namingConventionFor } from "@/lib/heritage";
+import { cascadePicks, type Anchors } from "@/lib/cascade";
 
 /**
  * Living style guide. Renders every primitive, palette token, motion
@@ -390,6 +391,17 @@ export default function DesignPage() {
           </Card>
         </Section>
 
+        <Section title="Cascade preview" eyebrow="§13">
+          <p className="mb-3 text-sm italic text-tavern-parchment/65">
+            Ten fresh full-random anchor sets — race → class → background
+            → alignment, with soft affinity weights. Re-roll to gauge
+            coherence vs variety.
+          </p>
+          <Card>
+            <CascadeDemo />
+          </Card>
+        </Section>
+
         <Section title="Heritage / naming" eyebrow="§13">
           <p className="mb-3 text-sm italic text-tavern-parchment/65">
             Per-race naming convention paragraphs sent in{" "}
@@ -520,6 +532,48 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 interface DemoState {
   oath: string;
   weapon: string;
+}
+
+function CascadeDemo() {
+  const [picks, setPicks] = useState<Anchors[]>(() =>
+    Array.from({ length: 10 }, () => cascadePicks({})),
+  );
+  return (
+    <div className="space-y-3">
+      <Button
+        size="sm"
+        onClick={() =>
+          setPicks(Array.from({ length: 10 }, () => cascadePicks({})))
+        }
+      >
+        re-roll 10
+      </Button>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-left font-heading text-[0.6rem] uppercase tracking-[0.25em] text-tavern-parchment/55">
+            <tr>
+              <th className="py-1">#</th>
+              <th className="py-1">Race</th>
+              <th className="py-1">Class</th>
+              <th className="py-1">Background</th>
+              <th className="py-1">Alignment</th>
+            </tr>
+          </thead>
+          <tbody className="text-tavern-parchment/85">
+            {picks.map((p, i) => (
+              <tr key={i} className="border-t border-tavern-stone/20">
+                <td className="py-1 text-tavern-parchment/50">{i + 1}</td>
+                <td className="py-1">{p.race}</td>
+                <td className="py-1">{p.charClass}</td>
+                <td className="py-1">{p.background}</td>
+                <td className="py-1 italic">{p.alignment}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function HeritageDemo() {

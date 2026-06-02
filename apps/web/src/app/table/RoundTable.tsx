@@ -17,7 +17,7 @@ import {
 } from "@/lib/api";
 import { CharacterCard } from "./CharacterCard";
 import { EditCharacterModal } from "./EditCharacterModal";
-import { LevelUpModal } from "./LevelUpModal";
+import { LevelUpWizard } from "./LevelUpWizard";
 
 export function RoundTable() {
   const { toast } = useToast();
@@ -131,7 +131,7 @@ export function RoundTable() {
         onChanged={() => void refresh()}
       />
 
-      <LevelUpModal
+      <LevelUpWizard
         character={levelUp}
         onClose={() => setLevelUp(null)}
         onChanged={() => void refresh()}

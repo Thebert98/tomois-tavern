@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Lock, Unlock, Save, Sparkles, AlertTriangle } from "lucide-react";
+import { Save, Sparkles, AlertTriangle } from "lucide-react";
 import {
   Button,
   Card,
@@ -15,6 +15,7 @@ import {
 import { reroll, type RerollCharacter } from "@/lib/api";
 import { playSfx } from "@/lib/sfx";
 import { getField, setField, type SheetField } from "@/lib/sheet";
+import { FieldLock } from "@/components/wizard/FieldLock";
 
 /**
  * Edit modal — full sheet editor with per-field lock toggles and a
@@ -278,29 +279,11 @@ function FieldRow({
           onChange={(e) => onChange(e.target.value)}
         />
       )}
-      <button
-        type="button"
-        onClick={onToggleLock}
-        aria-pressed={!!state.locked}
-        aria-label={state.locked ? `Unlock ${field.label}` : `Lock ${field.label}`}
-        className={`inline-flex h-9 items-center gap-1 rounded-md border px-2 text-xs uppercase tracking-[0.2em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold ${
-          state.locked
-            ? "border-tavern-gold/80 bg-tavern-gold/15 text-tavern-gold"
-            : "border-tavern-stone/35 text-tavern-parchment/55 hover:border-tavern-gold/50"
-        }`}
-      >
-        {state.locked ? (
-          <>
-            <Lock className="h-3 w-3" />
-            locked
-          </>
-        ) : (
-          <>
-            <Unlock className="h-3 w-3" />
-            free
-          </>
-        )}
-      </button>
+      <FieldLock
+        locked={!!state.locked}
+        onToggle={onToggleLock}
+        label={field.label}
+      />
     </div>
   );
 }

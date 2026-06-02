@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Dices, Minus, Plus, RotateCcw } from "lucide-react";
 import { Button, Card, Chip, cn } from "@tomois/ui";
+import { FieldLock } from "@/components/wizard/FieldLock";
 import {
   ABILITIES,
   ABILITY_LABEL,
@@ -102,7 +103,7 @@ export function StatsStep({
         <PoolEditor state={state} set={set} />
       )}
 
-      <SummaryCard state={state} />
+      <SummaryCard state={state} set={set} />
     </div>
   );
 }
@@ -380,12 +381,19 @@ function PointBuyEditor({
 
 // ---- summary ----
 
-function SummaryCard({ state }: { state: FireplaceState }) {
+function SummaryCard({
+  state,
+  set,
+}: {
+  state: FireplaceState;
+  set: (patch: Partial<FireplaceState>) => void;
+}) {
   const final = applyRaceASI(state.race, state.stats);
   const complete = ABILITIES.every((ab) =>
     state.statsMethod === "pointbuy" ? (state.stats[ab] || 0) >= 8 : state.stats[ab] > 0,
   );
   if (!complete) return null;
+  const locked = state.locks.stats ?? true;
   return (
     <Card compact className="border-tavern-gold/30">
       <div className="grid grid-cols-6 gap-2 text-center">
@@ -400,9 +408,21 @@ function SummaryCard({ state }: { state: FireplaceState }) {
           </div>
         ))}
       </div>
-      <p className="mt-3 text-center text-[0.65rem] italic text-tavern-parchment/55">
-        final totals — locked when you light the fire.
-      </p>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-[0.65rem] italic text-tavern-parchment/55">
+          {locked
+            ? "final totals — bound to the sheet when you light the fire."
+            : "final totals — offered as a suggestion; the fire may adjust."}
+        </p>
+        <FieldLock
+          locked={locked}
+          onToggle={() =>
+            set({ locks: { ...state.locks, stats: !locked } })
+          }
+          label="Ability scores"
+          size="sm"
+        />
+      </div>
     </Card>
   );
 }

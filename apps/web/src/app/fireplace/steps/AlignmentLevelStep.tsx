@@ -2,6 +2,8 @@
 
 import { Input, Label, cn } from "@tomois/ui";
 import { ALIGNMENTS, type Alignment } from "@/lib/srd";
+import { FieldLock } from "@/components/wizard/FieldLock";
+import { LockedField } from "@/components/wizard/LockedField";
 import type { FireplaceState } from "../FireplaceWizard";
 
 const SHORT: Record<Alignment, string> = {
@@ -23,11 +25,22 @@ export function AlignmentLevelStep({
   state: FireplaceState;
   set: (patch: Partial<FireplaceState>) => void;
 }) {
+  function toggleLock(key: string) {
+    set({ locks: { ...state.locks, [key]: !(state.locks[key] ?? true) } });
+  }
   return (
     <div className="space-y-5">
       <div>
-        <Label>Alignment</Label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="flex items-end justify-between gap-2">
+          <Label>Alignment</Label>
+          <FieldLock
+            locked={state.locks.alignment ?? true}
+            onToggle={() => toggleLock("alignment")}
+            label="Alignment"
+            size="sm"
+          />
+        </div>
+        <div className="mt-1 grid grid-cols-3 gap-2">
           {ALIGNMENTS.map((a) => {
             const active = state.alignment === a;
             return (
@@ -58,9 +71,13 @@ export function AlignmentLevelStep({
         </p>
       </div>
 
-      <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto]">
-        <div>
-          <Label htmlFor="hero-level">Level</Label>
+      <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto_auto]">
+        <LockedField
+          htmlFor="hero-level"
+          label="Level"
+          locked={state.locks.level ?? true}
+          onToggleLock={() => toggleLock("level")}
+        >
           <Input
             id="hero-level"
             type="number"
@@ -74,7 +91,7 @@ export function AlignmentLevelStep({
               });
             }}
           />
-        </div>
+        </LockedField>
         <div className="text-right">
           <span className="font-heading text-[0.6rem] uppercase tracking-[0.25em] text-tavern-parchment/45">
             most heroes begin at

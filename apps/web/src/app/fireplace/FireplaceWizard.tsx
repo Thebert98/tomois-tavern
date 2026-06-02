@@ -7,7 +7,7 @@ import { AlertTriangle, Flame } from "lucide-react";
 import { Card, useToast } from "@tomois/ui";
 import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
 import { reroll } from "@/lib/api";
-import { lockedSheetFrom } from "@/lib/sheet";
+import { sheetFromPicks } from "@/lib/sheet";
 import { playSfx } from "@/lib/sfx";
 import {
   ABILITIES,
@@ -45,6 +45,12 @@ export interface FireplaceState {
   spells: string[];
   /** When true, the SpellsStep yields and the fire chooses spells. */
   autoSpells: boolean;
+  /**
+   * Per-field lock map. Missing key defaults to `true` (locked). A `false`
+   * lets the LLM revise the pick during /generate; the value still seeds
+   * the prompt so it's treated as a suggestion rather than from-scratch.
+   */
+  locks: Record<string, boolean>;
 }
 
 const INITIAL: FireplaceState = {
@@ -60,6 +66,7 @@ const INITIAL: FireplaceState = {
   stats: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
   spells: [],
   autoSpells: true,
+  locks: {},
 };
 
 function statsComplete(state: FireplaceState): boolean {
@@ -131,9 +138,9 @@ export function FireplaceWizard() {
       const resolvedStats = statsComplete(state)
         ? applyRaceASI(state.race, state.stats)
         : null;
-      const lockSpells =
+      const spellsPicked =
         isCaster(state.char_class) && !state.autoSpells && state.spells.length > 0;
-      const picks = {
+      const picks: Record<string, unknown> = {
         name,
         race: state.race,
         char_class: state.char_class,
@@ -141,9 +148,9 @@ export function FireplaceWizard() {
         alignment: state.alignment,
         level: state.level !== 1 ? state.level : null,
         stats: resolvedStats,
-        spells: lockSpells ? state.spells : null,
+        spells: spellsPicked ? state.spells : null,
       };
-      const sheet = lockedSheetFrom(picks);
+      const sheet = sheetFromPicks(picks, state.locks);
       if (Object.keys(sheet).length > 0) {
         await reroll.update(created.id, { sheet });
       }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Input, Label } from "@tomois/ui";
+import { Input } from "@tomois/ui";
 import {
   ABILITY_LABEL,
   BACKGROUND_NAMES,
@@ -11,6 +11,7 @@ import {
   RACES,
   type Ability,
 } from "@/lib/srd";
+import { LockedField } from "@/components/wizard/LockedField";
 import type { FireplaceState } from "../FireplaceWizard";
 
 function asiSummary(race: string): string {
@@ -46,10 +47,18 @@ export function IdentityStep({
   state: FireplaceState;
   set: (patch: Partial<FireplaceState>) => void;
 }) {
+  function toggleLock(key: string) {
+    set({ locks: { ...state.locks, [key]: !(state.locks[key] ?? true) } });
+  }
   return (
     <div className="space-y-4">
-      <div>
-        <Label htmlFor="hero-name">Name</Label>
+      <LockedField
+        htmlFor="hero-name"
+        label="Name"
+        locked={state.locks.name ?? true}
+        onToggleLock={() => toggleLock("name")}
+        hint="Names are usually locked — but free it and the fire may christen them anew."
+      >
         <Input
           id="hero-name"
           autoFocus
@@ -57,39 +66,57 @@ export function IdentityStep({
           value={state.name}
           onChange={(e) => set({ name: e.target.value })}
         />
-      </div>
+      </LockedField>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <PickerSelect
-          id="hero-race"
+        <LockedField
+          htmlFor="hero-race"
           label="Race"
-          value={state.race}
-          options={RACE_NAMES}
-          describe={asiSummary}
-          placeholder="Pick a heritage (optional)"
-          onChange={(v) => set({ race: v })}
-        />
+          locked={state.locks.race ?? true}
+          onToggleLock={() => toggleLock("race")}
+        >
+          <Picker
+            id="hero-race"
+            value={state.race}
+            options={RACE_NAMES}
+            describe={asiSummary}
+            placeholder="Pick a heritage (optional)"
+            onChange={(v) => set({ race: v })}
+          />
+        </LockedField>
 
-        <PickerSelect
-          id="hero-class"
+        <LockedField
+          htmlFor="hero-class"
           label="Class"
-          value={state.char_class}
-          options={CLASS_NAMES}
-          describe={classSummary}
-          placeholder="Pick a calling"
-          onChange={(v) => set({ char_class: v })}
-        />
+          locked={state.locks.char_class ?? true}
+          onToggleLock={() => toggleLock("char_class")}
+        >
+          <Picker
+            id="hero-class"
+            value={state.char_class}
+            options={CLASS_NAMES}
+            describe={classSummary}
+            placeholder="Pick a calling"
+            onChange={(v) => set({ char_class: v })}
+          />
+        </LockedField>
       </div>
 
-      <PickerSelect
-        id="hero-background"
+      <LockedField
+        htmlFor="hero-background"
         label="Background"
-        value={state.background}
-        options={BACKGROUND_NAMES}
-        describe={backgroundSummary}
-        placeholder="Pick a past (optional)"
-        onChange={(v) => set({ background: v })}
-      />
+        locked={state.locks.background ?? true}
+        onToggleLock={() => toggleLock("background")}
+      >
+        <Picker
+          id="hero-background"
+          value={state.background}
+          options={BACKGROUND_NAMES}
+          describe={backgroundSummary}
+          placeholder="Pick a past (optional)"
+          onChange={(v) => set({ background: v })}
+        />
+      </LockedField>
 
       {state.race && state.char_class && (
         <p className="text-xs italic text-tavern-parchment/55">
@@ -101,9 +128,8 @@ export function IdentityStep({
   );
 }
 
-function PickerSelect({
+function Picker({
   id,
-  label,
   value,
   options,
   describe,
@@ -111,7 +137,6 @@ function PickerSelect({
   onChange,
 }: {
   id: string;
-  label: string;
   value: string;
   options: string[];
   describe: (name: string) => string;
@@ -119,21 +144,18 @@ function PickerSelect({
   onChange: (v: string) => void;
 }) {
   return (
-    <div>
-      <Label htmlFor={id}>{label}</Label>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-tavern-stone/35 bg-tavern-night px-3 py-2 text-sm text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
-      >
-        <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt} — {describe(opt)}
-          </option>
-        ))}
-      </select>
-    </div>
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-lg border border-tavern-stone/35 bg-tavern-night px-3 py-2 text-sm text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+    >
+      <option value="">{placeholder}</option>
+      {options.map((opt) => (
+        <option key={opt} value={opt}>
+          {opt} — {describe(opt)}
+        </option>
+      ))}
+    </select>
   );
 }

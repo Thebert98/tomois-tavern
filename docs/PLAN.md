@@ -99,6 +99,49 @@ Before opening the phase's PR:
 - [x] Phase 7 — Bard's Stage UI (compose + library, Suno-key pending)
 - [x] Phase 8 — Final audit (see Audit results below)
 
+### Visual overhaul + Fireplace/Round Table swap (2026-06-02)
+- [x] PR 1 — tavern panorama + art-backed Scene
+- [x] PR 2 — patrons + lanterns layered over the painted scene
+- [x] PR 3 — Round Table portrait card redesign (proper 3:4 aspect)
+- [x] PR 4 — Round Table Edit modal (lifts Fireplace lock+reroll UX)
+- [x] PR 5 — Round Table Level-up wizard with class-aware "what's new"
+- [x] PR 6 — Fireplace = new-hero forge
+- [x] PR 7 — Polish + audit (see Audit results 2026-06-02 below)
+
+## Audit results (2026-06-02)
+
+**Secrets — clean.**
+- `git ls-files | xargs grep -lE "sk-(ant|proj)|sb_(secret|publishable)|eyJhbGciOi"` → empty.
+- `git log -S` for every concrete secret value across all history → empty.
+- `services/workshop/scripts/generate_tavern_art.py` reuses `FAL_KEY`
+  from the workshop's local `.env` (gitignored); committed image is
+  binary art, no key material.
+
+**RLS — unchanged.**
+- No new backend routes in this overhaul. ReRoll's existing PUT + POST
+  /generate is used for both the Edit modal and the Level-up wizard,
+  both via `user_client`-scoped fetches with the traveller's JWT.
+
+**Frontend — clean.**
+- No `dangerouslySetInnerHTML` introduced.
+- No new direct `process.env.*` reads; all env still routes via `lib/env.ts`.
+- Every `<img>` (including the panorama) has an `alt` attribute.
+- New modals (Edit, Level-up) reuse `@tomois/ui Modal` so they inherit
+  focus-trap, ESC-close, focus-restore.
+- New buttons have focus rings; Fireplace identity-lock collapser is
+  `aria-expanded`; Edit modal's lock toggle is `aria-pressed`.
+
+**Motion / a11y — clean.**
+- Patrons.tsx defines per-element `patron-sway-N` keyframes with a
+  `prefers-reduced-motion: reduce` override that collapses them to a
+  static transform. Lanterns reuse `.flicker`, already covered by the
+  global reduced-motion rule.
+
+**Rate limit guidance.**
+- Level-up wizard and Edit-modal reroll share ReRoll's per-user 20/day
+  generation cap. 429s render as "The fire is spent for the day. Try
+  again tomorrow." in both.
+
 ## Audit results (2026-06-01)
 
 **Secrets — clean.**

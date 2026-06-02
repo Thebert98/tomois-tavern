@@ -4,15 +4,22 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { AlertTriangle, Flame } from "lucide-react";
-import { Card, Label, Textarea, useToast } from "@tomois/ui";
+import { Card, useToast } from "@tomois/ui";
 import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
 import { reroll } from "@/lib/api";
 import { lockedSheetFrom } from "@/lib/sheet";
 import { playSfx } from "@/lib/sfx";
-import { ABILITIES, applyRaceASI, type Ability } from "@/lib/srd";
+import {
+  ABILITIES,
+  applyRaceASI,
+  CLASS_INFO,
+  type Ability,
+} from "@/lib/srd";
 import { IdentityStep } from "./steps/IdentityStep";
 import { AlignmentLevelStep } from "./steps/AlignmentLevelStep";
 import { StatsStep } from "./steps/StatsStep";
+import { SpellsStep } from "./steps/SpellsStep";
+import { SealStep } from "./steps/SealStep";
 
 export type StatsMethod = "array" | "pointbuy" | "roll";
 
@@ -34,6 +41,10 @@ export interface FireplaceState {
   statsPool: number[];
   /** Base (pre-race-ASI) scores. Pointbuy fills 8s; others start at 0. */
   stats: Record<Ability, number>;
+  /** Player-picked spells (cantrips + leveled) for casters. */
+  spells: string[];
+  /** When true, the SpellsStep yields and the fire chooses spells. */
+  autoSpells: boolean;
 }
 
 const INITIAL: FireplaceState = {
@@ -47,6 +58,8 @@ const INITIAL: FireplaceState = {
   statsMethod: null,
   statsPool: [],
   stats: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+  spells: [],
+  autoSpells: true,
 };
 
 function statsComplete(state: FireplaceState): boolean {
@@ -55,10 +68,13 @@ function statsComplete(state: FireplaceState): boolean {
   return ABILITIES.every((ab) => (state.stats[ab] ?? 0) >= minVal);
 }
 
+function isCaster(charClass: string): boolean {
+  return (CLASS_INFO[charClass]?.caster ?? "none") !== "none";
+}
+
 export function FireplaceWizard() {
   const router = useRouter();
   const { toast } = useToast();
-  const [vibe, setVibe] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<"idle" | "rolling">("idle");
 
@@ -84,6 +100,22 @@ export function FireplaceWizard() {
       isValid: (s) => statsComplete(s),
       render: (state, set) => <StatsStep state={state} set={set} />,
     },
+    {
+      id: "spells",
+      title: "What words do you carry?",
+      flavor: "Pick a starting spell palette — or let the fire choose for you.",
+      // Only present this step for caster classes.
+      shouldShow: (s) => isCaster(s.char_class),
+      optional: true,
+      render: (state, set) => <SpellsStep state={state} set={set} />,
+    },
+    {
+      id: "seal",
+      title: "Light the fire.",
+      flavor: "One last whisper, then the hearth paints your hero.",
+      optional: true,
+      render: (state, set) => <SealStep state={state} set={set} />,
+    },
   ];
 
   async function complete(state: FireplaceState) {
@@ -99,6 +131,8 @@ export function FireplaceWizard() {
       const resolvedStats = statsComplete(state)
         ? applyRaceASI(state.race, state.stats)
         : null;
+      const lockSpells =
+        isCaster(state.char_class) && !state.autoSpells && state.spells.length > 0;
       const picks = {
         name,
         race: state.race,
@@ -107,12 +141,13 @@ export function FireplaceWizard() {
         alignment: state.alignment,
         level: state.level !== 1 ? state.level : null,
         stats: resolvedStats,
+        spells: lockSpells ? state.spells : null,
       };
       const sheet = lockedSheetFrom(picks);
       if (Object.keys(sheet).length > 0) {
         await reroll.update(created.id, { sheet });
       }
-      await reroll.generate(created.id, vibe.trim());
+      await reroll.generate(created.id, state.vibe.trim());
       void playSfx("embers");
       toast(`${name} steps from the fire.`, { tone: "success" });
       router.push(`/table?character=${created.id}`);
@@ -141,23 +176,6 @@ export function FireplaceWizard() {
             completeLabel={stage === "rolling" ? "rolling…" : "light the fire"}
             onComplete={complete}
           />
-        </div>
-
-        <div className="mt-6 border-t border-tavern-stone/20 pt-5">
-          <Label htmlFor="hero-vibe">
-            Whisper to the fire (optional)
-          </Label>
-          <Textarea
-            id="hero-vibe"
-            rows={3}
-            placeholder="e.g. a tragic backstory tied to the burned harbor; lean spell-heavy."
-            value={vibe}
-            onChange={(e) => setVibe(e.target.value)}
-            disabled={stage === "rolling"}
-          />
-          <p className="mt-1 text-xs italic text-tavern-parchment/50">
-            Anything you don&apos;t specify, the fire decides.
-          </p>
         </div>
 
         {error && (

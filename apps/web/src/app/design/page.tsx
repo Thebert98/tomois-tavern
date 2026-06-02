@@ -34,6 +34,7 @@ import { LockedField } from "@/components/wizard/LockedField";
 import { PlayStylePicker } from "@/components/wizard/PlayStylePicker";
 import type { PlayStyle } from "@/lib/playstyle";
 import { RollingDialog, type RollingStage } from "@/components/RollingDialog";
+import { heritageRaces, namingConventionFor } from "@/lib/heritage";
 
 /**
  * Living style guide. Renders every primitive, palette token, motion
@@ -389,6 +390,18 @@ export default function DesignPage() {
           </Card>
         </Section>
 
+        <Section title="Heritage / naming" eyebrow="§13">
+          <p className="mb-3 text-sm italic text-tavern-parchment/65">
+            Per-race naming convention paragraphs sent in{" "}
+            <code className="font-mono text-xs text-tavern-gold">user_notes</code>
+            . Human re-rolls a Forgotten Realms cultural strand on every
+            click — refresh to see the variety.
+          </p>
+          <Card>
+            <HeritageDemo />
+          </Card>
+        </Section>
+
         <Section title="Rolling dialog" eyebrow="§11">
           <p className="mb-3 text-sm italic text-tavern-parchment/65">
             Overlay shown while the LLM is generating, then transitions to a
@@ -507,6 +520,46 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 interface DemoState {
   oath: string;
   weapon: string;
+}
+
+function HeritageDemo() {
+  const [tick, setTick] = useState(0);
+  const races = heritageRaces();
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs italic text-tavern-parchment/55">
+          one row per race · click to re-roll Human strand
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => setTick((t) => t + 1)}>
+          re-roll Human
+        </Button>
+      </div>
+      <div className="space-y-3" key={tick}>
+        {races.map((race) => (
+          <div
+            key={race}
+            className="rounded-md border border-tavern-stone/30 bg-tavern-night/40 p-3"
+          >
+            <div className="font-heading text-[0.65rem] uppercase tracking-[0.25em] text-tavern-gold">
+              {race}
+            </div>
+            <p className="mt-1 text-xs text-tavern-parchment/75">
+              {namingConventionFor(race)}
+            </p>
+          </div>
+        ))}
+        <div className="rounded-md border border-tavern-stone/30 bg-tavern-night/40 p-3">
+          <div className="font-heading text-[0.65rem] uppercase tracking-[0.25em] text-tavern-gold">
+            Human (random strand)
+          </div>
+          <p className="mt-1 text-xs text-tavern-parchment/75">
+            {namingConventionFor("Human")}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function RollingDialogDemo() {

@@ -24,7 +24,7 @@ export function TavernHUD({ hidden = false }: { hidden?: boolean }) {
         href="/"
         className="pointer-events-auto inline-flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-tavern-night/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
       >
-        <span aria-hidden className="text-base">🍻</span>
+        <span aria-hidden className="breath text-base">🍻</span>
         <span className="font-heading text-xs uppercase tracking-[0.35em] text-tavern-gold sm:text-sm">
           Tomoi&apos;s Tavern
         </span>

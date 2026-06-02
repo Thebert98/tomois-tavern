@@ -290,7 +290,7 @@ function MirrorFrame({
   portrait: PortraitDTO | null;
 }) {
   return (
-    <div className="relative mx-auto aspect-[3/4] w-full max-w-md rounded-[2.5rem] border-8 border-tavern-gold/40 bg-tavern-night/80 p-2 shadow-[0_0_40px_rgba(212,175,55,0.25)]">
+    <div className="breath relative mx-auto aspect-[3/4] w-full max-w-md rounded-[2.5rem] border-8 border-tavern-gold/40 bg-tavern-night/80 p-2 shadow-[0_0_40px_rgba(212,175,55,0.25)]">
       <div className="absolute inset-0 rounded-[2.5rem] border-2 border-tavern-gold/20" />
       <div className="relative h-full w-full overflow-hidden rounded-[2rem] bg-gradient-to-b from-tavern-night via-[#1a1208] to-[#0a0604]">
         <AnimatePresence>

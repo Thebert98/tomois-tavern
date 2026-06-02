@@ -303,6 +303,47 @@ export default function DesignPage() {
           </div>
         </Section>
 
+        <Section title="Tavern atmospherics" eyebrow="§5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="relative h-32 overflow-hidden rounded-lg border border-tavern-stone/30 bg-tavern-night/60">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  aria-hidden
+                  className="flicker block h-20 w-20 rounded-full"
+                  style={{
+                    background:
+                      "radial-gradient(circle, rgba(245,209,138,0.55) 0%, transparent 60%)",
+                    filter: "blur(2px)",
+                  }}
+                />
+              </div>
+              <div className="absolute bottom-1 left-2 font-heading text-[0.55rem] uppercase tracking-[0.2em] text-tavern-parchment/55">
+                lantern glow (flicker)
+              </div>
+            </div>
+            <div className="relative h-32 overflow-hidden rounded-lg border border-tavern-stone/30 bg-tavern-night/60">
+              <div className="absolute inset-0 flex items-end justify-center pb-3">
+                <span
+                  aria-hidden
+                  className="breath block h-16 w-12 text-tavern-night/85"
+                >
+                  <svg
+                    viewBox="0 0 40 60"
+                    preserveAspectRatio="xMidYMax meet"
+                    className="h-full w-full"
+                  >
+                    <ellipse cx="20" cy="14" rx="7" ry="8" />
+                    <path d="M6 30 Q20 22 34 30 L34 60 L6 60 Z" />
+                  </svg>
+                </span>
+              </div>
+              <div className="absolute bottom-1 left-2 font-heading text-[0.55rem] uppercase tracking-[0.2em] text-tavern-parchment/55">
+                patron silhouette (breath)
+              </div>
+            </div>
+          </div>
+        </Section>
+
         <Section title="Per-room palette" eyebrow="§9">
           <div className="grid gap-3 sm:grid-cols-5">
             {ROOMS.map((r) => (

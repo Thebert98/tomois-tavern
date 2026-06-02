@@ -17,6 +17,7 @@ import {
   type Ability,
 } from "@/lib/srd";
 import { playStylePromptPrefix, type PlayStyle } from "@/lib/playstyle";
+import { frameHeroSeed, pickHeroSeed } from "@/lib/heroSeeds";
 import { IdentityStep } from "./steps/IdentityStep";
 import { AlignmentLevelStep } from "./steps/AlignmentLevelStep";
 import { PlayStyleStep } from "./steps/PlayStyleStep";
@@ -249,7 +250,12 @@ export function FireplaceWizard() {
         await reroll.update(created.id, { sheet });
       }
       const prefix = playStylePromptPrefix(state.playStyle);
-      const vibePayload = (prefix + state.vibe.trim()).trim();
+      // When the player didn't write a vibe, inject a random hero seed so
+      // the LLM has something specific to riff on (without it, the model
+      // collapses to the same handful of default archetypes).
+      const userVibe = state.vibe.trim();
+      const seed = userVibe ? "" : frameHeroSeed(pickHeroSeed(2));
+      const vibePayload = [prefix, userVibe, seed].filter(Boolean).join(" ").trim();
       const result = await reroll.generate(created.id, vibePayload);
       const hero = await settleHero(
         created.id,
@@ -280,7 +286,10 @@ export function FireplaceWizard() {
         sheet: { name: { value: null, locked: false } },
       });
       const prefix = playStylePromptPrefix(INITIAL.playStyle);
-      const result = await reroll.generate(created.id, prefix.trim());
+      // Randomize always gets a hero seed — there's no user vibe to anchor it.
+      const seed = frameHeroSeed(pickHeroSeed(2));
+      const vibePayload = [prefix, seed].filter(Boolean).join(" ").trim();
+      const result = await reroll.generate(created.id, vibePayload);
       const hero = await settleHero(
         created.id,
         result.character.sheet as Record<string, unknown>,

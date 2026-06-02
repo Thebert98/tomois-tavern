@@ -27,6 +27,12 @@ export interface WizardStep<S> {
   optional?: boolean;
   /** Return true if Next should be enabled. Defaults to true. */
   isValid?: (state: S) => boolean;
+  /**
+   * Return false to hide this step from the wizard for the current state.
+   * Used for class-conditional steps (e.g. SpellsStep only for casters).
+   * Defaults to always-show.
+   */
+  shouldShow?: (state: S) => boolean;
   /** Render the step body. */
   render: (state: S, set: (patch: Partial<S>) => void) => ReactNode;
 }
@@ -62,14 +68,40 @@ export function Wizard<S>({
   const [index, setIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
-  const total = steps.length;
-  const step = steps[index];
-  const isLast = index === total - 1;
+  const visible = steps.filter((s) => !s.shouldShow || s.shouldShow(state));
+  // If the current index lands on a now-hidden step, snap forward.
+  const safeIndex = Math.min(index, steps.length - 1);
+  const stepAtIndex = steps[safeIndex];
+  const stepIsVisible =
+    !stepAtIndex.shouldShow || stepAtIndex.shouldShow(state);
+  const step = stepIsVisible
+    ? stepAtIndex
+    : (visible[Math.min(safeIndex, visible.length - 1)] ?? steps[0]);
+  const visibleIdx = Math.max(
+    0,
+    visible.findIndex((s) => s.id === step.id),
+  );
+  const isLast = visibleIdx === visible.length - 1;
   const valid = step.isValid ? step.isValid(state) : true;
 
   const set = useCallback((patch: Partial<S>) => {
     setState((cur) => ({ ...cur, ...patch }));
   }, []);
+
+  function nextVisible(from: number): number {
+    for (let i = from + 1; i < steps.length; i++) {
+      const s = steps[i];
+      if (!s.shouldShow || s.shouldShow(state)) return i;
+    }
+    return from;
+  }
+  function prevVisible(from: number): number {
+    for (let i = from - 1; i >= 0; i--) {
+      const s = steps[i];
+      if (!s.shouldShow || s.shouldShow(state)) return i;
+    }
+    return from;
+  }
 
   async function next() {
     if (submitting) return;
@@ -82,17 +114,20 @@ export function Wizard<S>({
       }
       return;
     }
-    setIndex((i) => Math.min(total - 1, i + 1));
+    const here = steps.findIndex((s) => s.id === step.id);
+    setIndex(nextVisible(here));
   }
 
   function back() {
     if (submitting) return;
-    setIndex((i) => Math.max(0, i - 1));
+    const here = steps.findIndex((s) => s.id === step.id);
+    setIndex(prevVisible(here));
   }
 
   function skip() {
     if (submitting || !step.optional || isLast) return;
-    setIndex((i) => Math.min(total - 1, i + 1));
+    const here = steps.findIndex((s) => s.id === step.id);
+    setIndex(nextVisible(here));
   }
 
   return (
@@ -105,9 +140,9 @@ export function Wizard<S>({
         aria-label="Wizard progress"
         className="flex items-center gap-1.5"
       >
-        {steps.map((s, i) => {
-          const done = i < index;
-          const active = i === index;
+        {visible.map((s, i) => {
+          const done = i < visibleIdx;
+          const active = i === visibleIdx;
           return (
             <div
               key={s.id}
@@ -129,7 +164,7 @@ export function Wizard<S>({
 
       <div className="flex items-baseline justify-between">
         <span className="font-heading text-[0.6rem] uppercase tracking-[0.3em] text-tavern-parchment/50">
-          step {index + 1} of {total}
+          step {visibleIdx + 1} of {visible.length}
         </span>
         {step.optional && (
           <span className="text-[0.6rem] italic text-tavern-parchment/45">

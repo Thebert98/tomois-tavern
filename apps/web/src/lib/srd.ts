@@ -262,6 +262,43 @@ export function isASILevel(level: number): boolean {
   return (ASI_LEVELS as readonly number[]).includes(level);
 }
 
+/**
+ * Soft cap on the number of cantrips + leveled spells a class can know /
+ * prepare at a given character level. Used by the SpellsStep picker to gate
+ * how many checkboxes the player can tick. The backend validator
+ * (`services/.../ReRoll/backend/app/validator/validator.py`) is the source
+ * of truth for legality — these are pragmatic UX limits, not the rule.
+ */
+export function spellsKnownAt(
+  charClass: string,
+  level: number,
+): { cantrips: number; spells: number } {
+  const info = CLASS_INFO[charClass];
+  if (!info || info.caster === "none") return { cantrips: 0, spells: 0 };
+  const baseCantrips: Record<string, number> = {
+    Bard: 2,
+    Cleric: 3,
+    Druid: 2,
+    Sorcerer: 4,
+    Wizard: 3,
+    Warlock: 2,
+  };
+  const base = baseCantrips[charClass] ?? 0;
+  const growth = level >= 17 ? 2 : level >= 10 ? 1 : level >= 4 ? 0 : 0;
+  const cantrips = base + growth;
+  let spells: number;
+  if (info.caster === "half") {
+    spells = level < 2 ? 0 : Math.max(2, Math.floor(level / 2) + 1);
+  } else if (info.caster === "pact") {
+    spells = Math.min(15, level + 1);
+  } else if (info.prepared) {
+    spells = level + 3;
+  } else {
+    spells = level + 2;
+  }
+  return { cantrips, spells };
+}
+
 // ---- stat method helpers ---------------------------------------------------
 
 /** Standard array per the DMG. */

@@ -9,13 +9,17 @@ import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
 import { reroll } from "@/lib/api";
 import { lockedSheetFrom } from "@/lib/sheet";
 import { playSfx } from "@/lib/sfx";
+import { ABILITIES, applyRaceASI, type Ability } from "@/lib/srd";
 import { IdentityStep } from "./steps/IdentityStep";
 import { AlignmentLevelStep } from "./steps/AlignmentLevelStep";
+import { StatsStep } from "./steps/StatsStep";
+
+export type StatsMethod = "array" | "pointbuy" | "roll";
 
 /**
- * Wizard state — every step writes into this single object. PR 3 + PR 4 will
- * grow it with `stats` and `spells` respectively. `vibe` lives at the bottom
- * of the page in this PR; PR 4 promotes it to its own SealStep.
+ * Wizard state — every step writes into this single object. PR 4 will add
+ * `spells`. `vibe` lives at the bottom of the page in this PR; PR 4 promotes
+ * it to its own SealStep.
  */
 export interface FireplaceState {
   name: string;
@@ -25,6 +29,11 @@ export interface FireplaceState {
   alignment: string;
   level: number;
   vibe: string;
+  statsMethod: StatsMethod | null;
+  /** Unassigned scores remaining for array / roll methods. */
+  statsPool: number[];
+  /** Base (pre-race-ASI) scores. Pointbuy fills 8s; others start at 0. */
+  stats: Record<Ability, number>;
 }
 
 const INITIAL: FireplaceState = {
@@ -35,7 +44,16 @@ const INITIAL: FireplaceState = {
   alignment: "",
   level: 1,
   vibe: "",
+  statsMethod: null,
+  statsPool: [],
+  stats: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
 };
+
+function statsComplete(state: FireplaceState): boolean {
+  if (!state.statsMethod) return false;
+  const minVal = state.statsMethod === "pointbuy" ? 8 : 1;
+  return ABILITIES.every((ab) => (state.stats[ab] ?? 0) >= minVal);
+}
 
 export function FireplaceWizard() {
   const router = useRouter();
@@ -59,6 +77,13 @@ export function FireplaceWizard() {
       optional: true,
       render: (state, set) => <AlignmentLevelStep state={state} set={set} />,
     },
+    {
+      id: "stats",
+      title: "What sharpens your edge?",
+      flavor: "Pick a method, then place the numbers. Race bonuses are layered on top.",
+      isValid: (s) => statsComplete(s),
+      render: (state, set) => <StatsStep state={state} set={set} />,
+    },
   ];
 
   async function complete(state: FireplaceState) {
@@ -71,6 +96,9 @@ export function FireplaceWizard() {
     setStage("rolling");
     try {
       const created = await reroll.createCharacter(name);
+      const resolvedStats = statsComplete(state)
+        ? applyRaceASI(state.race, state.stats)
+        : null;
       const picks = {
         name,
         race: state.race,
@@ -78,6 +106,7 @@ export function FireplaceWizard() {
         background: state.background,
         alignment: state.alignment,
         level: state.level !== 1 ? state.level : null,
+        stats: resolvedStats,
       };
       const sheet = lockedSheetFrom(picks);
       if (Object.keys(sheet).length > 0) {

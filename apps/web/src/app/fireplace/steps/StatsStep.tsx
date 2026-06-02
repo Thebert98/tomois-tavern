@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { Dices, Minus, Plus, RotateCcw } from "lucide-react";
 import { Button, Card, Chip, cn } from "@tomois/ui";
 import { FieldLock } from "@/components/wizard/FieldLock";
+import { recommendedAbilities } from "@/lib/playstyle";
 import {
   ABILITIES,
   ABILITY_LABEL,
@@ -176,17 +177,23 @@ function PoolEditor({
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        {ABILITIES.map((ab) => (
-          <AbilityRow
-            key={ab}
-            ab={ab}
-            value={state.stats[ab]}
-            race={state.race}
-            options={pool}
-            onPick={(v) => place(ab, v)}
-            onClear={() => clear(ab)}
-          />
-        ))}
+        {ABILITIES.map((ab) => {
+          const rec = recommendedAbilities(state.playStyle, state.char_class);
+          const tier: "primary" | "secondary" | null =
+            rec.primary === ab ? "primary" : rec.secondary === ab ? "secondary" : null;
+          return (
+            <AbilityRow
+              key={ab}
+              ab={ab}
+              value={state.stats[ab]}
+              race={state.race}
+              options={pool}
+              tier={tier}
+              onPick={(v) => place(ab, v)}
+              onClear={() => clear(ab)}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -197,6 +204,7 @@ function AbilityRow({
   value,
   race,
   options,
+  tier,
   onPick,
   onClear,
 }: {
@@ -204,16 +212,36 @@ function AbilityRow({
   value: number;
   race: string;
   options: number[];
+  tier: "primary" | "secondary" | null;
   onPick: (v: number) => void;
   onClear: () => void;
 }) {
   const bump = applyRaceASI(race, { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 })[ab];
   const final = value > 0 ? value + bump : 0;
   return (
-    <div className="flex items-center gap-2 rounded-md border border-tavern-stone/30 bg-tavern-night/50 px-3 py-2">
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-md border bg-tavern-night/50 px-3 py-2",
+        tier === "primary"
+          ? "border-tavern-gold/60"
+          : tier === "secondary"
+            ? "border-tavern-gold/30"
+            : "border-tavern-stone/30",
+      )}
+    >
       <span className="font-heading text-xs uppercase tracking-[0.2em] text-tavern-parchment/85">
         {ABILITY_LABEL[ab]}
       </span>
+      {tier && (
+        <span
+          aria-label={`${tier} recommendation`}
+          title={`${tier} recommendation for the chosen play style`}
+          className={cn(
+            "ml-0.5 inline-block h-1.5 w-1.5 rounded-full",
+            tier === "primary" ? "bg-tavern-gold" : "bg-tavern-gold/55",
+          )}
+        />
+      )}
       <div className="ml-auto flex items-center gap-2">
         {bump > 0 && (
           <Chip tone="active" className="!px-1 !py-0">
@@ -325,6 +353,9 @@ function PointBuyEditor({
 
       <div className="grid gap-2 sm:grid-cols-2">
         {ABILITIES.map((ab) => {
+          const rec = recommendedAbilities(state.playStyle, state.char_class);
+          const tier: "primary" | "secondary" | null =
+            rec.primary === ab ? "primary" : rec.secondary === ab ? "secondary" : null;
           const base = state.stats[ab] || 8;
           const bumpV = applyRaceASI(state.race, {
             str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0,
@@ -333,11 +364,27 @@ function PointBuyEditor({
           return (
             <div
               key={ab}
-              className="flex items-center gap-2 rounded-md border border-tavern-stone/30 bg-tavern-night/50 px-3 py-2"
+              className={cn(
+                "flex items-center gap-2 rounded-md border bg-tavern-night/50 px-3 py-2",
+                tier === "primary"
+                  ? "border-tavern-gold/60"
+                  : tier === "secondary"
+                    ? "border-tavern-gold/30"
+                    : "border-tavern-stone/30",
+              )}
             >
               <span className="font-heading text-xs uppercase tracking-[0.2em] text-tavern-parchment/85">
                 {ABILITY_LABEL[ab]}
               </span>
+              {tier && (
+                <span
+                  aria-label={`${tier} recommendation`}
+                  className={cn(
+                    "ml-0.5 inline-block h-1.5 w-1.5 rounded-full",
+                    tier === "primary" ? "bg-tavern-gold" : "bg-tavern-gold/55",
+                  )}
+                />
+              )}
               <div className="ml-auto flex items-center gap-1">
                 {bumpV > 0 && (
                   <Chip tone="active" className="!px-1 !py-0">

@@ -15,8 +15,10 @@ import {
   CLASS_INFO,
   type Ability,
 } from "@/lib/srd";
+import { playStylePromptPrefix, type PlayStyle } from "@/lib/playstyle";
 import { IdentityStep } from "./steps/IdentityStep";
 import { AlignmentLevelStep } from "./steps/AlignmentLevelStep";
+import { PlayStyleStep } from "./steps/PlayStyleStep";
 import { StatsStep } from "./steps/StatsStep";
 import { SpellsStep } from "./steps/SpellsStep";
 import { SealStep } from "./steps/SealStep";
@@ -51,6 +53,8 @@ export interface FireplaceState {
    * the prompt so it's treated as a suggestion rather than from-scratch.
    */
   locks: Record<string, boolean>;
+  /** Stance — biases recommendations and seeds the /generate prompt. */
+  playStyle: PlayStyle;
 }
 
 const INITIAL: FireplaceState = {
@@ -67,6 +71,7 @@ const INITIAL: FireplaceState = {
   spells: [],
   autoSpells: true,
   locks: {},
+  playStyle: "balanced",
 };
 
 function statsComplete(state: FireplaceState): boolean {
@@ -99,6 +104,13 @@ export function FireplaceWizard() {
       flavor: "Choose an alignment — or leave none and the fire chooses. Pick a level.",
       optional: true,
       render: (state, set) => <AlignmentLevelStep state={state} set={set} />,
+    },
+    {
+      id: "playstyle",
+      title: "How do they fight?",
+      flavor: "Pick a stance — it shapes recommendations and what the fire weaves in.",
+      optional: true,
+      render: (state, set) => <PlayStyleStep state={state} set={set} />,
     },
     {
       id: "stats",
@@ -154,7 +166,9 @@ export function FireplaceWizard() {
       if (Object.keys(sheet).length > 0) {
         await reroll.update(created.id, { sheet });
       }
-      await reroll.generate(created.id, state.vibe.trim());
+      const prefix = playStylePromptPrefix(state.playStyle);
+      const vibePayload = (prefix + state.vibe.trim()).trim();
+      await reroll.generate(created.id, vibePayload);
       void playSfx("embers");
       toast(`${name} steps from the fire.`, { tone: "success" });
       router.push(`/table?character=${created.id}`);

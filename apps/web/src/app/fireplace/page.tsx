@@ -1,15 +1,15 @@
 import { AuthGate } from "@/components/auth/AuthGate";
 import { RoomShell } from "@/components/RoomShell";
-import { Fireplace } from "./Fireplace";
+import { FireplaceWizard } from "./FireplaceWizard";
 
 export default function FireplacePage() {
   return (
     <AuthGate>
       <RoomShell
         title="The Fireplace"
-        subtitle="Stoke the embers — speak a name, and a hero will step out of the fire."
+        subtitle="Step by step — the fire fills in everything you don't."
       >
-        <Fireplace />
+        <FireplaceWizard />
       </RoomShell>
     </AuthGate>
   );

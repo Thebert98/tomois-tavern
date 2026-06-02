@@ -29,6 +29,7 @@ import {
   useToast,
 } from "@tomois/ui";
 import { unfurl } from "@/lib/motion";
+import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
 
 /**
  * Living style guide. Renders every primitive, palette token, motion
@@ -362,6 +363,17 @@ export default function DesignPage() {
           </div>
         </Section>
 
+        <Section title="Wizard" eyebrow="§11">
+          <p className="mb-3 text-sm italic text-tavern-parchment/65">
+            Used by the Fireplace and the Round Table&apos;s level-up. Two
+            sample steps below — the second is optional and gates Next via{" "}
+            <code className="font-mono text-xs text-tavern-gold">isValid</code>.
+          </p>
+          <Card>
+            <DesignWizardDemo />
+          </Card>
+        </Section>
+
         <Section title="Voice & tone" eyebrow="§1">
           <ul className="space-y-2">
             {VOICE.map((v) => (
@@ -452,6 +464,56 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
     <p className="mb-1 font-heading text-[0.6rem] uppercase tracking-[0.3em] text-tavern-parchment/45">
       {children}
     </p>
+  );
+}
+
+interface DemoState {
+  oath: string;
+  weapon: string;
+}
+
+function DesignWizardDemo() {
+  const { toast } = useToast();
+  const steps: WizardStep<DemoState>[] = [
+    {
+      id: "oath",
+      title: "Speak your oath",
+      flavor: "Required — Next stays disabled until you type something.",
+      isValid: (s) => s.oath.trim().length > 0,
+      render: (state, set) => (
+        <Input
+          autoFocus
+          placeholder="By moon and oak…"
+          value={state.oath}
+          onChange={(e) => set({ oath: e.target.value })}
+        />
+      ),
+    },
+    {
+      id: "weapon",
+      title: "Pick a weapon (optional)",
+      flavor: "Optional — Skip slides past.",
+      optional: true,
+      render: (state, set) => (
+        <Input
+          placeholder="A worn flute"
+          value={state.weapon}
+          onChange={(e) => set({ weapon: e.target.value })}
+        />
+      ),
+    },
+  ];
+  return (
+    <Wizard
+      steps={steps}
+      initialState={{ oath: "", weapon: "" }}
+      completeLabel="seal the oath"
+      onComplete={(s) =>
+        toast(`Oath sealed: ${s.oath.trim() || "—"} · ${s.weapon.trim() || "no weapon"}`, {
+          tone: "success",
+        })
+      }
+    />
   );
 }
 

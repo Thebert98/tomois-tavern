@@ -21,6 +21,7 @@ import {
   type Ability,
 } from "@/lib/srd";
 import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
+import { RollingDialog, type RollingHero } from "@/components/RollingDialog";
 import { playStylePromptPrefix } from "@/lib/playstyle";
 import { TargetStep } from "./levelup-steps/TargetStep";
 import { HitDiceStep } from "./levelup-steps/HitDiceStep";
@@ -166,14 +167,42 @@ export function LevelUpWizard({
   >([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [wizardKey, setWizardKey] = useState(0);
+  const [stage, setStage] = useState<"idle" | "rolling" | "done">("idle");
+  const [risenHero, setRisenHero] = useState<RollingHero | null>(null);
+  const [whisper, setWhisper] = useState<string>("");
 
   // Reset wizard state whenever a new character flows in.
   useEffect(() => {
     if (!character) return;
     setErrors([]);
     setSubmitError(null);
+    setStage("idle");
+    setRisenHero(null);
+    setWhisper("");
     setWizardKey((k) => k + 1);
   }, [character]);
+
+  function summarizeHero(
+    sheet: Record<string, unknown>,
+    fallbackName: string,
+  ): RollingHero {
+    const name = fieldValue<unknown>(sheet, "name");
+    const race = fieldValue<unknown>(sheet, "race");
+    const cc = fieldValue<unknown>(sheet, "char_class");
+    const level = fieldValue<unknown>(sheet, "level");
+    return {
+      name:
+        typeof name === "string" && name.trim() ? name.trim() : fallbackName,
+      race: typeof race === "string" && race ? race : undefined,
+      charClass: typeof cc === "string" && cc ? cc : undefined,
+      level:
+        typeof level === "number" && Number.isFinite(level)
+          ? level
+          : typeof level === "string" && level
+            ? Number(level)
+            : undefined,
+    };
+  }
 
   function showHpStep(state: LevelUpState): boolean {
     return state.target > state.fromLevel;
@@ -262,6 +291,8 @@ export function LevelUpWizard({
     if (!character) return;
     setErrors([]);
     setSubmitError(null);
+    setWhisper(state.notes.trim());
+    setStage("rolling");
     try {
       const finalStats = applyAsiToStats(state.baseStats, state.asi);
       const mergedSpells = Array.from(
@@ -303,29 +334,42 @@ export function LevelUpWizard({
       const result = await reroll.generate(character.id, note);
       setErrors(result.validation_errors ?? []);
       void playSfx("embers");
+      onChanged();
       if (result.validation_errors?.length) {
         toast("Re-rolled — but the rules object to a detail.", { tone: "error" });
+        setStage("idle");
       } else {
-        toast(`Your hero rises to level ${state.target}.`, { tone: "success" });
-      }
-      onChanged();
-      if (!result.validation_errors?.length) onClose();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
-      if (msg.includes("429")) {
-        setSubmitError(
-          "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
+        setRisenHero(
+          summarizeHero(
+            result.character.sheet as Record<string, unknown>,
+            result.character.name || "Your hero",
+          ),
         );
-      } else {
-        setSubmitError(msg.replace(/^\d+:\s*/, ""));
+        setStage("done");
       }
+    } catch (e) {
+      handleClimbError(e);
     }
+  }
+
+  function handleClimbError(e: unknown) {
+    const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
+    if (msg.includes("429")) {
+      setSubmitError(
+        "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
+      );
+    } else {
+      setSubmitError(msg.replace(/^\d+:\s*/, ""));
+    }
+    setStage("idle");
   }
 
   async function randomizeLevelUp() {
     if (!character) return;
     setErrors([]);
     setSubmitError(null);
+    setWhisper("");
+    setStage("rolling");
     try {
       const patched = patchedSheet(
         character.sheet as Sheet,
@@ -339,23 +383,28 @@ export function LevelUpWizard({
       const result = await reroll.generate(character.id, note);
       setErrors(result.validation_errors ?? []);
       void playSfx("embers");
+      onChanged();
       if (result.validation_errors?.length) {
         toast("Re-rolled — but the rules object to a detail.", { tone: "error" });
+        setStage("idle");
       } else {
-        toast(`Your hero rises to level ${initial.target}.`, { tone: "success" });
-        onChanged();
-        onClose();
+        setRisenHero(
+          summarizeHero(
+            result.character.sheet as Record<string, unknown>,
+            result.character.name || "Your hero",
+          ),
+        );
+        setStage("done");
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
-      if (msg.includes("429")) {
-        setSubmitError(
-          "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
-        );
-      } else {
-        setSubmitError(msg.replace(/^\d+:\s*/, ""));
-      }
+      handleClimbError(e);
     }
+  }
+
+  function dismissDialog() {
+    setStage("idle");
+    setRisenHero(null);
+    onClose();
   }
 
   return (
@@ -374,12 +423,16 @@ export function LevelUpWizard({
       }
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={stage !== "idle"}>
             close
           </Button>
-          <Button variant="secondary" onClick={randomizeLevelUp}>
+          <Button
+            variant="secondary"
+            onClick={randomizeLevelUp}
+            disabled={stage !== "idle"}
+          >
             <Dices className="h-4 w-4" />
-            let the fire roll it
+            {stage === "rolling" ? "rolling…" : "let the fire roll it"}
           </Button>
         </>
       }
@@ -389,7 +442,9 @@ export function LevelUpWizard({
           key={wizardKey}
           steps={steps}
           initialState={initial}
-          completeLabel="roll the next chapter"
+          completeLabel={
+            stage === "rolling" ? "rolling…" : "roll the next chapter"
+          }
           onComplete={complete}
         />
 
@@ -425,6 +480,20 @@ export function LevelUpWizard({
           </Card>
         )}
       </div>
+
+      <RollingDialog
+        open={stage === "rolling" || stage === "done"}
+        stage={stage === "done" ? "done" : "rolling"}
+        hero={risenHero}
+        whisper={whisper}
+        doneCaption={
+          risenHero?.level
+            ? `rises to level ${risenHero.level}.`
+            : "rises with the climb."
+        }
+        dismissLabel="back to the table"
+        onDismiss={dismissDialog}
+      />
     </Modal>
   );
 }

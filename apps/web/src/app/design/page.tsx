@@ -33,6 +33,7 @@ import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
 import { LockedField } from "@/components/wizard/LockedField";
 import { PlayStylePicker } from "@/components/wizard/PlayStylePicker";
 import type { PlayStyle } from "@/lib/playstyle";
+import { RollingDialog, type RollingStage } from "@/components/RollingDialog";
 
 /**
  * Living style guide. Renders every primitive, palette token, motion
@@ -388,6 +389,17 @@ export default function DesignPage() {
           </Card>
         </Section>
 
+        <Section title="Rolling dialog" eyebrow="§11">
+          <p className="mb-3 text-sm italic text-tavern-parchment/65">
+            Overlay shown while the LLM is generating, then transitions to a
+            done banner with the new hero&apos;s name + race · class · level.
+            Try both states.
+          </p>
+          <Card>
+            <RollingDialogDemo />
+          </Card>
+        </Section>
+
         <Section title="Play styles" eyebrow="§12">
           <p className="mb-3 text-sm italic text-tavern-parchment/65">
             Shared stance picker — used in the Fireplace and at the Round
@@ -495,6 +507,46 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 interface DemoState {
   oath: string;
   weapon: string;
+}
+
+function RollingDialogDemo() {
+  const [open, setOpen] = useState(false);
+  const [stage, setStage] = useState<RollingStage>("rolling");
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          onClick={() => {
+            setStage("rolling");
+            setOpen(true);
+          }}
+        >
+          show rolling
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setStage("done");
+            setOpen(true);
+          }}
+        >
+          show done
+        </Button>
+      </div>
+      <RollingDialog
+        open={open}
+        stage={stage}
+        whisper="a tragic backstory tied to the burned harbor"
+        hero={{
+          name: "Theron Skybreaker",
+          race: "Half-Elf",
+          charClass: "Cleric",
+          level: 1,
+        }}
+        onDismiss={() => setOpen(false)}
+      />
+    </div>
+  );
 }
 
 function FieldLockDemo() {

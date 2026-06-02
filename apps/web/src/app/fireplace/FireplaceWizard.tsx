@@ -4,10 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { AlertTriangle, Dices, Flame } from "lucide-react";
-import { Button, Card, useToast } from "@tomois/ui";
+import { Button, Card } from "@tomois/ui";
 import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
+import { RollingDialog, type RollingHero } from "@/components/RollingDialog";
 import { reroll } from "@/lib/api";
-import { sheetFromPicks } from "@/lib/sheet";
+import { fieldValue, sheetFromPicks } from "@/lib/sheet";
 import { playSfx } from "@/lib/sfx";
 import {
   ABILITIES,
@@ -84,11 +85,24 @@ function isCaster(charClass: string): boolean {
   return (CLASS_INFO[charClass]?.caster ?? "none") !== "none";
 }
 
+/**
+ * Short, unique placeholder used as the row name while /generate runs.
+ * The sheet's name field is freed at submit time so the LLM generates a
+ * proper name; `settleHero` then syncs the row name back. The placeholder
+ * is only visible if a third party views the roster during that window.
+ */
+function workingTitle(): string {
+  const n = Math.floor(1000 + Math.random() * 9000);
+  return `Newcomer #${n}`;
+}
+
 export function FireplaceWizard() {
   const router = useRouter();
-  const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
-  const [stage, setStage] = useState<"idle" | "rolling">("idle");
+  const [stage, setStage] = useState<"idle" | "rolling" | "done">("idle");
+  const [rolledHero, setRolledHero] = useState<RollingHero | null>(null);
+  const [rolledId, setRolledId] = useState<string | null>(null);
+  const [whisper, setWhisper] = useState<string>("");
 
   const steps: WizardStep<FireplaceState>[] = [
     {
@@ -137,22 +151,84 @@ export function FireplaceWizard() {
     },
   ];
 
+  function handleError(e: unknown) {
+    const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
+    if (msg.includes("429")) {
+      setError(
+        "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
+      );
+    } else {
+      setError(msg.replace(/^\d+:\s*/, ""));
+    }
+    setStage("idle");
+  }
+
+  /**
+   * Pull a display-ready hero summary out of a generate result and sync the
+   * row name back from the freshly-generated sheet so the Round Table
+   * shows the right name (otherwise the placeholder row name sticks).
+   */
+  async function settleHero(
+    characterId: string,
+    sheet: Record<string, unknown>,
+    rowName: string,
+    userTypedName: boolean,
+  ): Promise<RollingHero> {
+    const sheetName = fieldValue<unknown>(sheet, "name");
+    const resolvedName =
+      typeof sheetName === "string" && sheetName.trim()
+        ? sheetName.trim()
+        : null;
+    // Sync the row name from the sheet whenever the player didn't lock one.
+    // (When they did, we keep their pick — the AI may have echoed something
+    // identical or different; the lock is the source of truth.)
+    let displayName = rowName;
+    if (!userTypedName && resolvedName && resolvedName !== rowName) {
+      try {
+        const renamed = await reroll.renameCharacter(characterId, resolvedName);
+        displayName = renamed.name;
+      } catch {
+        displayName = resolvedName;
+      }
+    } else if (userTypedName) {
+      displayName = rowName;
+    } else if (resolvedName) {
+      displayName = resolvedName;
+    }
+    const race = fieldValue<unknown>(sheet, "race");
+    const char_class = fieldValue<unknown>(sheet, "char_class");
+    const level = fieldValue<unknown>(sheet, "level");
+    return {
+      name: displayName,
+      race: typeof race === "string" && race ? race : undefined,
+      charClass: typeof char_class === "string" && char_class ? char_class : undefined,
+      level:
+        typeof level === "number" && Number.isFinite(level)
+          ? level
+          : typeof level === "string" && level
+            ? Number(level)
+            : 1,
+    };
+  }
+
   async function complete(state: FireplaceState) {
-    const name = state.name.trim();
-    // Empty name is allowed — the row uses a placeholder and the AI fills
-    // sheet.name (which the Round Table edit modal can sync to the row later).
-    const rowName = name || "Unnamed Hero";
+    const typedName = state.name.trim();
+    // Empty name → no row placeholder. We pick a brief working title that
+    // will be replaced after generation; never use the same default twice.
+    const rowName = typedName || workingTitle();
     setError(null);
+    setWhisper(state.vibe.trim());
     setStage("rolling");
     try {
       const created = await reroll.createCharacter(rowName);
+      setRolledId(created.id);
       const resolvedStats = statsComplete(state)
         ? applyRaceASI(state.race, state.stats)
         : null;
       const spellsPicked =
         isCaster(state.char_class) && !state.autoSpells && state.spells.length > 0;
       const picks: Record<string, unknown> = {
-        name: name || null,
+        name: typedName || null,
         race: state.race,
         char_class: state.char_class,
         background: state.background,
@@ -162,52 +238,69 @@ export function FireplaceWizard() {
         spells: spellsPicked ? state.spells : null,
       };
       const sheet = sheetFromPicks(picks, state.locks);
+      // If the player didn't enter a name, explicitly null + free the sheet's
+      // name field so the LLM generates a fresh one. Without this the
+      // backend's row-name placeholder leaks into the sheet and the AI keeps
+      // it (which is how every randomize ended up named "Unnamed Hero").
+      if (!typedName) {
+        sheet.name = { value: null, locked: false };
+      }
       if (Object.keys(sheet).length > 0) {
         await reroll.update(created.id, { sheet });
       }
       const prefix = playStylePromptPrefix(state.playStyle);
       const vibePayload = (prefix + state.vibe.trim()).trim();
-      await reroll.generate(created.id, vibePayload);
+      const result = await reroll.generate(created.id, vibePayload);
+      const hero = await settleHero(
+        created.id,
+        result.character.sheet as Record<string, unknown>,
+        result.character.name,
+        Boolean(typedName) && (state.locks.name ?? true),
+      );
+      setRolledHero(hero);
       void playSfx("embers");
-      toast(`${name || "A hero"} steps from the fire.`, { tone: "success" });
-      router.push(`/table?character=${created.id}`);
+      setStage("done");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
-      if (msg.includes("429")) {
-        setError(
-          "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
-        );
-      } else {
-        setError(msg.replace(/^\d+:\s*/, ""));
-      }
-      setStage("idle");
+      handleError(e);
     }
   }
 
   async function randomizeAll() {
     if (stage === "rolling") return;
     setError(null);
+    setWhisper("");
     setStage("rolling");
     try {
-      const created = await reroll.createCharacter("Unnamed Hero");
-      // No sheet patches — every field stays unlocked, so the LLM picks
-      // everything from scratch. The play-style + vibe still seed the prompt.
+      const rowName = workingTitle();
+      const created = await reroll.createCharacter(rowName);
+      setRolledId(created.id);
+      // Free the name field explicitly (see complete()'s comment for why)
+      // and otherwise leave the sheet untouched so the LLM picks everything.
+      await reroll.update(created.id, {
+        sheet: { name: { value: null, locked: false } },
+      });
       const prefix = playStylePromptPrefix(INITIAL.playStyle);
-      await reroll.generate(created.id, prefix.trim());
+      const result = await reroll.generate(created.id, prefix.trim());
+      const hero = await settleHero(
+        created.id,
+        result.character.sheet as Record<string, unknown>,
+        result.character.name,
+        false,
+      );
+      setRolledHero(hero);
       void playSfx("embers");
-      toast("A hero steps from the fire.", { tone: "success" });
-      router.push(`/table?character=${created.id}`);
+      setStage("done");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "The fire wouldn't catch.";
-      if (msg.includes("429")) {
-        setError(
-          "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
-        );
-      } else {
-        setError(msg.replace(/^\d+:\s*/, ""));
-      }
-      setStage("idle");
+      handleError(e);
     }
+  }
+
+  function dismissDialog() {
+    const id = rolledId;
+    setStage("idle");
+    setRolledHero(null);
+    setRolledId(null);
+    if (id) router.push(`/table?character=${id}`);
   }
 
   return (
@@ -256,6 +349,14 @@ export function FireplaceWizard() {
         </a>
         .
       </p>
+
+      <RollingDialog
+        open={stage === "rolling" || stage === "done"}
+        stage={stage === "done" ? "done" : "rolling"}
+        hero={rolledHero}
+        whisper={whisper}
+        onDismiss={dismissDialog}
+      />
     </div>
   );
 }

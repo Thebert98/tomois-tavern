@@ -94,12 +94,54 @@ h4 {
   animation: breath 5s infinite ease-in-out;
 }
 
+/* Indeterminate progress bar — a band of fire that sweeps across. */
+@keyframes hearth-progress {
+  0% {
+    left: -40%;
+    width: 40%;
+  }
+  50% {
+    width: 55%;
+  }
+  100% {
+    left: 100%;
+    width: 40%;
+  }
+}
+.hearth-progress {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(122, 107, 86, 0.18);
+}
+.hearth-progress::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(198, 107, 45, 0.95) 35%,
+    rgba(240, 160, 80, 1) 50%,
+    rgba(198, 107, 45, 0.95) 65%,
+    transparent 100%
+  );
+  filter: blur(0.5px);
+  animation: hearth-progress 2.4s ease-in-out infinite;
+}
+
 /* Honor user motion preferences — disable purely decorative loops. */
 @media (prefers-reduced-motion: reduce) {
   .flicker,
   .breath,
+  .hearth-progress::before,
   [class*="animate-pulse"] {
     animation: none !important;
+  }
+  .hearth-progress::before {
+    left: 0 !important;
+    width: 100% !important;
   }
   *,
   *::before,

@@ -288,6 +288,16 @@ export const reroll = {
     });
     return asJson<RerollCharacter>(res);
   },
+  async update(
+    id: string,
+    body: { name?: string; sheet?: Record<string, unknown> },
+  ) {
+    const res = await authedFetch(env.rerollBaseUrl, `/characters/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return asJson<RerollCharacter>(res);
+  },
   async generate(id: string, userNotes = "") {
     const res = await authedFetch(
       env.rerollBaseUrl,

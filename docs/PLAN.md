@@ -116,6 +116,12 @@ Before opening the phase's PR:
 - [x] PR 5 — LevelUpWizard (Target / Hit dice / ASI / Spells / Review) replaces LevelUpModal
 - [x] PR 6 — DESIGN.md §11 (wizard pattern) + `/design` demo + audit
 
+### Per-field lock control + play-style intent (2026-06-02)
+- [x] PR 1 — shared `FieldLock` + `LockedField` components; `sheetFromPicks(picks, locks)`; Fireplace wizard wires per-field locks
+- [x] PR 2 — `lib/playstyle.ts` + `PlayStylePicker`; Fireplace PlayStyleStep; StatsStep recommendation dots; vibe prepended with play-style prefix
+- [x] PR 3 — LevelUp PlayStyleStep; ASIStep stance highlight; ReviewStep stats + spells lock toggles; submit reads locks
+- [x] PR 4 — DESIGN.md §11 update + §12 Play styles; `/design` lock + stance demos; status block + secret audit
+
 ## Audit results (2026-06-02)
 
 **Secrets — clean.**

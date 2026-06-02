@@ -440,7 +440,7 @@ function SummaryCard({
     state.statsMethod === "pointbuy" ? (state.stats[ab] || 0) >= 8 : state.stats[ab] > 0,
   );
   if (!complete) return null;
-  const locked = state.locks.stats ?? true;
+  const locked = state.locks.stats ?? false;
   return (
     <Card compact className="border-tavern-gold/30">
       <div className="grid grid-cols-6 gap-2 text-center">
@@ -459,7 +459,7 @@ function SummaryCard({
         <p className="text-[0.65rem] italic text-tavern-parchment/55">
           {locked
             ? "final totals — bound to the sheet when you light the fire."
-            : "final totals — offered as a suggestion; the fire may adjust."}
+            : "final totals — offered as a suggestion; lock to bind them."}
         </p>
         <FieldLock
           locked={locked}

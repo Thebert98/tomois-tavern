@@ -26,7 +26,7 @@ export function AlignmentLevelStep({
   set: (patch: Partial<FireplaceState>) => void;
 }) {
   function toggleLock(key: string) {
-    set({ locks: { ...state.locks, [key]: !(state.locks[key] ?? true) } });
+    set({ locks: { ...state.locks, [key]: !(state.locks[key] ?? false) } });
   }
   return (
     <div className="space-y-5">
@@ -34,7 +34,7 @@ export function AlignmentLevelStep({
         <div className="flex items-end justify-between gap-2">
           <Label>Alignment</Label>
           <FieldLock
-            locked={state.locks.alignment ?? true}
+            locked={state.locks.alignment ?? false}
             onToggle={() => toggleLock("alignment")}
             label="Alignment"
             size="sm"
@@ -75,7 +75,7 @@ export function AlignmentLevelStep({
         <LockedField
           htmlFor="hero-level"
           label="Level"
-          locked={state.locks.level ?? true}
+          locked={state.locks.level ?? false}
           onToggleLock={() => toggleLock("level")}
         >
           <Input

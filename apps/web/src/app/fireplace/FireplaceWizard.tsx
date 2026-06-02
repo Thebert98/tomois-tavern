@@ -255,7 +255,7 @@ export function FireplaceWizard() {
         created.id,
         result.character.sheet as Record<string, unknown>,
         result.character.name,
-        Boolean(typedName) && (state.locks.name ?? true),
+        Boolean(typedName) && (state.locks.name ?? false),
       );
       setRolledHero(hero);
       void playSfx("embers");

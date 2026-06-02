@@ -89,7 +89,9 @@ export function sheetFromPicks(
     if (v === null || v === undefined) continue;
     if (typeof v === "string" && v.trim() === "") continue;
     if (Array.isArray(v) && v.length === 0) continue;
-    out[k] = { value: v, locked: locks[k] ?? true };
+    // Default unlocked: the user's pick seeds the prompt as a suggestion;
+    // explicit lock from the UI binds it.
+    out[k] = { value: v, locked: locks[k] ?? false };
   }
   return out;
 }

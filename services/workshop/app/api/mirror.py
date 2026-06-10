@@ -7,6 +7,7 @@ frontend subscribes via Supabase Realtime and shows a progress bar.
 Sprite/animation pipeline is archived on the `archive/sprites-pipeline`
 branch; restore it from there if needed.
 """
+import datetime as dt
 import logging
 import traceback
 from typing import Any, Optional
@@ -118,12 +119,32 @@ def create_portrait(
     )
 
 
+_STALE_PENDING_MINUTES = 10
+
+
+def _reap_stale_pending(db, user_id: str) -> None:
+    """Mark any of the caller's pending portraits older than 10 minutes
+    as ``failed``. This is the safety net for the rare case where the
+    BackgroundTask never started (server crash, scheduler starvation):
+    without it, the row sits at ``stage=queued`` forever and the UI
+    shows "stirring…" indefinitely. The reap runs at list time so the
+    UI's view of the world is always self-healing.
+    """
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=_STALE_PENDING_MINUTES)
+    db.table("portraits").update(
+        {"status": "failed", "stage": "failed"}
+    ).eq("user_id", user_id).eq("status", "pending").lt(
+        "created_at", cutoff.isoformat()
+    ).execute()
+
+
 @router.get("", response_model=list[dict[str, Any]])
 def list_portraits(
     user: CurrentUser = Depends(get_current_user),
     character_id: Optional[str] = None,
 ):
     db = user_client(user.token)
+    _reap_stale_pending(db, user.id)
     q = db.table("portraits").select("*").order("created_at", desc=True)
     if character_id:
         q = q.eq("character_id", character_id)

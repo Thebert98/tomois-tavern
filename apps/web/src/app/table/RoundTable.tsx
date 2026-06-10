@@ -87,7 +87,7 @@ export function RoundTable() {
         <EmptyState
           icon={<Flame className="h-7 w-7" />}
           title="The table is empty"
-          description="No heroes yet — visit the Fireplace and stoke the embers."
+          description="No heroes seated yet — visit the Fireplace and stoke the embers."
           action={
             <Link
               href="/fireplace"

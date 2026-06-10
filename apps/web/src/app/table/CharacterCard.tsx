@@ -99,10 +99,10 @@ export function CharacterCard({
               {portrait ? (
                 <Chip tone={portrait.is_current ? "active" : "default"}>
                   <Sparkles className="h-3 w-3" />
-                  {portrait.is_current ? "portrait set" : "portrait drafted"}
+                  {portrait.is_current ? "vision set" : "vision drafted"}
                 </Chip>
               ) : (
-                <Chip tone="muted">no portrait yet</Chip>
+                <Chip tone="muted">no vision yet</Chip>
               )}
             </div>
           </div>

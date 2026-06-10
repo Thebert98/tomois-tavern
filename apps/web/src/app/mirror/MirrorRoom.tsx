@@ -409,7 +409,16 @@ function Gallery({
       </div>
     );
   }
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    return (
+      <div>
+        <Label className="text-tavern-parchment/55">Past visions</Label>
+        <p className="mt-2 text-sm italic text-tavern-parchment/55">
+          No visions yet — speak to the mirror.
+        </p>
+      </div>
+    );
+  }
   return (
     <div>
       <Label className="text-tavern-parchment/55">Past visions</Label>

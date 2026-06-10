@@ -321,12 +321,23 @@ function PreviewPanel({
   );
 }
 
+function songStatusChip(status: string): {
+  tone: "active" | "muted" | "default";
+  label: string;
+} {
+  if (status === "ready") return { tone: "active", label: "ready" };
+  if (status === "failed") return { tone: "muted", label: "lost to silence" };
+  return { tone: "muted", label: "still singing…" };
+}
+
 function SongRow({ song }: { song: SongDTO }) {
+  const statusChip = songStatusChip(song.status);
   return (
     <li className="rounded-lg border border-tavern-stone/30 bg-tavern-night/50 p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Chip tone="default">{song.scope}</Chip>
+          <Chip tone={statusChip.tone}>{statusChip.label}</Chip>
           <span className="truncate text-sm text-tavern-parchment/80">
             {song.prompt}
           </span>

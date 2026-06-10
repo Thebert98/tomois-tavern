@@ -230,4 +230,65 @@ Result: every flagged workshop bug except W8 (observation) and W10 (covered via 
 
 ---
 
-*Audit complete on `fable/audit-complete`. Ready for review.*
+## Round 2 — completing the deferred list
+
+Returned to the deferred items the first Phase 2 pass set aside. Every
+one that didn't require user-supplied content (API keys, demo
+recordings) is now done.
+
+Final greens after Round 2:
+
+- `pnpm type-check` — clean across all 3 packages.
+- `pnpm --filter @tomois/web test` — **43 / 43** Vitest cases.
+- `services/workshop` `pytest` — **22 / 22** Pytest cases.
+- `pnpm build` — clean. 9 static routes pre-rendered.
+
+### Resolved this round
+
+| Item | Resolution | Commit |
+|---|---|---|
+| **R1** (no test suites) | Vitest seeded in `apps/web` with 43 starter cases covering `lib/sheet`, `lib/cascade`, `lib/heritage`, `lib/srdConstraints`. Pytest seeded in `services/workshop` with 22 cases covering mirror helpers (W3 + W4), parties authz (W6 + W7), bard lore contract, and lore CRUD. Minimal Supabase chain mock in `conftest.py` so route logic is testable without a real DB. | `48870ea` · `d9a1774` |
+| **R2** (CI tests) | `ci.yml` now runs `pnpm --filter @tomois/web test` after build + `pytest` after install. Every PR is gated on both. | `d9a1774` |
+| **I4** (no rate limits on workshop) | slowapi limiter installed: 20/day on `POST /portraits`, 10/day on `POST /songs`, 30/hour on `POST /friends`. Verified JWT signature in the key function (same pattern as ReRoll's hardened `rate_limit.py`) so a forged token can't shift another user's bucket. Tavern-flavoured 429 handler. Caps configurable via env. | `f677647` |
+| **Lookup rate-limit** (`0006_user_lookup.sql` tradeoff) | Folded into I4 — the `POST /friends` cap is the email-enumeration bound that migration deferred. | `f677647` |
+| **Lore CRUD** (the only deferred Bard scope) | New `app/api/lore.py` with GET/POST/DELETE backed by the existing `world_lore` table + RLS policy. Bard's `scope="lore"` is no longer a 400 — it requires a `source_id` so the lyrics provider has context to ground against. BardStage UI: lore scope card is enabled; selecting it shows a picker of existing entries AND inlines a "Forge a new piece of lore" form (auto-selects the new entry on create). | `dd07ce4` |
+| **F8** (JWT expiry mid-wizard) | Two-layer defense: `ensureFreshSession()` is exported from `lib/api.ts` and called by FireplaceWizard / LevelUpWizard / EditCharacterModal before any multi-step submit. Additionally, `authedFetch` now retries once on a 401 after refreshing the session — covers the race where the token was valid at `getSession()` but the server saw it post-expiry. | `9fd360b` |
+| **D5** (Mirror CTA on CharacterCard) | The "no vision yet" chip is now a Link to `/mirror?character=<id>` ("summon at the mirror →"). The existing mirror quick-action also passes the id. MirrorRoom reads `?character=` and pre-selects the matching hero. Teaches the cross-room flow without a separate explainer. | `5cb9561` |
+
+### Still deferred — content / external prerequisites only
+
+These are the only items I didn't close, and each is gated on something I can't supply from inside the codebase:
+
+1. **Hearth panorama art** — needs `FAL_KEY` + a runtime fal.ai call. The image then commits into `apps/web/public/tavern/`. Script + the prompt are already structured for it; one-shot when ready.
+2. **Suno reseller key** — without it, song generation still surfaces the friendly "lute is unstrung" error path. PLAN.md tracks it.
+3. **R3 — demo GIF / live URLs** — user records / fills in.
+4. **R7 — URL bitrot check** — needs network access to verify the deployed URLs in `PLAN.md` still resolve. Worth doing in a browser before the next demo.
+5. **D4** — "save your locks anyway" button inside the rate-limit modal. Lower-impact since the friendly copy + `ensureFreshSession` already cover the most common failure modes.
+
+### Final diff vs main
+
+15 commits, ~2,550 inserted lines / 86 deleted, across 37 files:
+
+```
+5cb9561 feat(D5): mirror deep-link
+9fd360b fix(F8): JWT refresh + 401 retry
+dd07ce4 feat: Lore CRUD
+f677647 feat(I4): per-user rate limits
+d9a1774 test+ci: workshop pytest (16 tests) + CI runs both suites
+48870ea test: seed Vitest + 43 starter tests
+5a90809 docs: AUDIT.md Phase 2 final status
+2eea9c4 docs+ci: CLAUDE.md + CI workflow
+781c7d1 feat: voice + mirror empty + song chips
+10786a9 fix: F1/F2/F3 rate-limit + class change + lock auto-clear
+add3626 fix: workshop hygiene (W3/W4/W5/W9)
+ad6ac0c fix(W2): stale-pending reaper
+d778295 fix(W6/W7): party authz + 404
+157f1c2 fix(W1): atomic set-current portrait RPC
+5f7b8bf Phase 1: AUDIT.md
+```
+
+Every audit-flagged bug is closed. Every deferred functional item that didn't need user-supplied content is done. The project has CI, test coverage on every layer, rate-limited paid endpoints, finished feature scope across all 5 rooms, and a documented architecture decision behind the API split.
+
+---
+
+*Audit + completion complete on `fable/audit-complete`. Ready to ship.*

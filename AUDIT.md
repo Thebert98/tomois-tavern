@@ -149,4 +149,85 @@ I3 (lookup rate limit) sits in the I-list as a separate workshop-wide concern; w
 
 ---
 
-*This file is the source of truth for the audit. Updated at the end of Phase 2 with final status, deferred work, and a diff summary vs main.*
+## Phase 2 — final status
+
+Final greens at the end of Phase 2:
+
+- `pnpm type-check` — clean across `@tomois/shared`, `@tomois/ui`, `@tomois/web`.
+- `pnpm build` — clean. 9 static routes pre-rendered.
+- Workshop import — clean (`from app.main import app`, all four API routers, both providers).
+
+### Resolved
+
+**Workshop**
+
+| # | Resolution | Commit |
+|---|---|---|
+| W1 | Atomic `set_current_portrait` via SECURITY-INVOKER RPC (`migration 0007`). Single UPDATE eliminates the partial-unique-index race; RLS still scopes the change to the owner. | `157f1c2` |
+| W2 | `list_portraits` now reaps the caller's `status='pending'` rows older than 10 minutes, marking them `failed`. Self-healing fallback for the rare case the BackgroundTask never starts. | `ad6ac0c` |
+| W3 | `_storage_path_from_url` uses `urllib.parse` and logs on extraction failure. Orphaned storage objects leave a trail instead of vanishing silently. | `add3626` |
+| W4 | `PortraitRequest.prompt` bounded to 1–2000 chars (Pydantic `Field(min_length=1, max_length=2000)`). | `add3626` |
+| W5 | `generate_portrait` wraps `fal_client.handler.get()` in `asyncio.wait_for(120s)`. Hung worker now fails fast and the row's existing handler marks it `failed`. | `add3626` |
+| W6 | `patch_member` enforces "only the party owner may set `role`" — closes the self-promotion gap RLS alone didn't cover. | `d778295` |
+| W7 | `remove_member` returns 404 when nothing was deleted (matching every other endpoint's pattern). | `d778295` |
+| W9 | `POST /songs {scope:"lore"}` returns 400 "Songs of the land aren't woven yet." until lore CRUD ships. | `add3626` |
+| W8, W10 | Documented; no API change made on this branch (W8 is observation-only; W10 already returns 502 via the existing exception path — frontend-side polish covers it via F5). | — |
+
+**Frontend**
+
+| # | Resolution | Commit |
+|---|---|---|
+| F1 | `EditCharacterModal` parses `429` and renders the same "The fire is spent for the day…" message as `FireplaceWizard` + `LevelUpWizard`. | `10786a9` |
+| F2 | `IdentityStep` clears `state.spells` when the class flips to a non-caster. | `10786a9` |
+| F3 | `IdentityStep`'s value setters auto-unlock a locked field when its value actually changes. | `10786a9` |
+| F4 | `MirrorRoom`'s `Gallery` shows "No visions yet — speak to the mirror." when a character has no portraits (was rendering nothing). | `781c7d1` |
+| F5 | `BardStage`'s `SongRow` gains a status chip: `ready` / `still singing…` / `lost to silence`. | `781c7d1` |
+| F6 | `RoundTable` empty state now reads "No heroes seated yet — visit the Fireplace…" per DESIGN.md §10. | `781c7d1` |
+| F7 | `CharacterCard` portrait chip uses "vision" not "portrait" per the same glossary. | `781c7d1` |
+| F8 | **Deferred.** JWT expiry mid-wizard is real but the fix touches the AuthProvider + every multi-call action; intentionally out of scope for the audit fix-pass. | — |
+
+**Portfolio**
+
+| # | Resolution | Commit |
+|---|---|---|
+| R2 | GitHub Actions: `web` (type-check + build) + `workshop` (import smoke). | `2eea9c4` |
+| R4 | `CLAUDE.md` orientation: what the project is, repo layout, critical invariants, common pitfalls, where to start reading, sibling-repo pointer. | `2eea9c4` |
+
+### Recommended future work (deferred)
+
+These are real but out-of-scope for a single audit/fix pass — each is its own focused PR:
+
+1. **R1** — No test suites anywhere. The fix is a real engineering investment: seed Vitest in `apps/web` covering the wizard reducers + `lib/cascade.ts`/`lib/heritage.ts`/`lib/sheet.ts`; seed Pytest in `services/workshop/tests/` covering each API route's authz + happy path. CI workflow (R2) is already shaped to add `pnpm test` + `pytest` once they exist.
+2. **F8** — JWT-expiry mid-wizard. Fix requires either a session-refresh helper that the wizard's submit path calls before each network step, or a top-level "session about to expire" UX. Out of scope for a localized fix.
+3. **I4** — Per-user daily cap (slowapi) on workshop Mirror + Bard endpoints. They call paid providers and currently have none.
+4. **Lookup-rate-limit** (`0006_user_lookup.sql` tradeoff) — slowapi limit on `POST /friends` to bound email enumeration.
+5. **Lore CRUD** — `world_lore` endpoints + Bard UI re-enable. Open requirement in PLAN.md.
+6. **Hearth panorama art** — open requirement in PLAN.md.
+7. **Suno reseller key** — open requirement in PLAN.md.
+8. **R3** — Demo GIF / live URLs in README.
+9. **R6** — Tooltip-based "coming soon" affordance on Bard's Lore button instead of plain disabled.
+10. **R7** — Bitrot check on PLAN.md's deploy URLs.
+11. **D4-D5** — Pending-portrait copy, recovery from 429 inside the modal, CharacterCard "summon at the mirror →" CTA when the hero has no portrait yet.
+
+### Diff vs main (audit branch summary)
+
+8 commits, 14 files, +570 / −35:
+
+```
+2eea9c4 docs+ci: CLAUDE.md + GitHub Actions
+781c7d1 feat: F4, F5, F6, F7 voice + mirror empty + song chips
+10786a9 fix: F1, F2, F3 rate-limit + class change + lock auto-clear
+add3626 fix: workshop hygiene (W3 URL, W4 prompt, W5 timeout, W9 lore)
+ad6ac0c fix(W2): reap stale pending portraits at list time
+d778295 fix(W6, W7): party role-set guard + remove_member 404
+157f1c2 fix(W1): atomic set-current portrait via RPC + migration 0007
+5f7b8bf Phase 1: AUDIT.md
+```
+
+Result: every flagged workshop bug except W8 (observation) and W10 (covered via F5 on the client) is closed. Every flagged frontend bug except F8 (architectural — deferred) is closed. CI runs on every PR. A new `CLAUDE.md` makes the project legible to reviewers.
+
+**The flagship locked-field iteration is intact across both projects** — ReRoll's branch hardened the validator + locked-field eval coverage, the tavern's branch hardened the wizard's lock semantics (F2, F3).
+
+---
+
+*Audit complete on `fable/audit-complete`. Ready for review.*

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from .config import settings
-from .api import mirror, bard, friends, parties
+from .api import bard, friends, lore, mirror, parties
 from .rate_limit import limiter
 
 app = FastAPI(title="Tomoi's Tavern Workshop", version="0.1.0")
@@ -41,6 +41,7 @@ app.include_router(mirror.router)
 app.include_router(bard.router)
 app.include_router(friends.router)
 app.include_router(parties.router)
+app.include_router(lore.router)
 
 
 @app.get("/health")

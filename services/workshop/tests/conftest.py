@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from app import db as db_module
 from app.api import bard as bard_module
 from app.api import friends as friends_module
+from app.api import lore as lore_module
 from app.api import mirror as mirror_module
 from app.api import parties as parties_module
 from app.auth import CurrentUser, get_current_user
@@ -164,7 +165,13 @@ def client(fake_store: FakeStore, monkeypatch: pytest.MonkeyPatch) -> TestClient
     fake_service_client = lambda: fake_db
     monkeypatch.setattr(db_module, "user_client", fake_user_client)
     monkeypatch.setattr(db_module, "service_client", fake_service_client)
-    for mod in (bard_module, friends_module, mirror_module, parties_module):
+    for mod in (
+        bard_module,
+        friends_module,
+        lore_module,
+        mirror_module,
+        parties_module,
+    ):
         if hasattr(mod, "user_client"):
             monkeypatch.setattr(mod, "user_client", fake_user_client)
         if hasattr(mod, "service_client"):

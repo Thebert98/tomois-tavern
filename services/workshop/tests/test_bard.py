@@ -1,8 +1,10 @@
 """Route tests for the Bard.
 
 Covers:
-- W9 — ``POST /songs {scope: "lore"}`` returns 400 with the tavern-flavoured
-  copy until lore CRUD ships.
+- Lore scope WITHOUT a source_id returns 400 with tavern-flavoured copy
+  (the LORE CRUD shipped, so the API no longer rejects scope=lore
+  outright — but it does require pointing the bard at a specific lore
+  entry to ground the song against).
 - Pydantic validates the ``scope`` literal (basic Pydantic; included so
   the route's contract is documented and a future widening of the enum
   is intentional).
@@ -12,7 +14,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 
-def test_lore_scope_returns_400_with_tavern_copy(client: TestClient) -> None:
+def test_lore_scope_without_source_returns_400(client: TestClient) -> None:
     res = client.post(
         "/songs",
         json={
@@ -24,9 +26,10 @@ def test_lore_scope_returns_400_with_tavern_copy(client: TestClient) -> None:
     )
     assert res.status_code == 400
     body = res.json()
-    # Voice-glossary check: the message uses tavern language, not "not
-    # implemented" or "503".
-    assert "woven" in body["detail"].lower() or "land" in body["detail"].lower()
+    # Voice-glossary check: the message uses tavern language, not
+    # "Bad Request" or a stack trace, and it tells the user WHAT to do.
+    assert "lore" in body["detail"].lower()
+    assert "bard" in body["detail"].lower() or "point" in body["detail"].lower()
 
 
 def test_unknown_scope_rejected_by_pydantic(client: TestClient) -> None:

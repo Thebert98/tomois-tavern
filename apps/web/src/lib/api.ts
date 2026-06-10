@@ -103,6 +103,37 @@ export const workshop = {
   },
 };
 
+// ---- world lore ----
+export interface LoreDTO {
+  id: string;
+  title: string;
+  body: string;
+  created_at: string | null;
+}
+
+export const lore = {
+  async list(): Promise<LoreDTO[]> {
+    const res = await authedFetch(env.workshopBaseUrl, "/lore");
+    return asJson<LoreDTO[]>(res);
+  },
+  async create(input: { title: string; body: string }): Promise<LoreDTO> {
+    const res = await authedFetch(env.workshopBaseUrl, "/lore", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return asJson<LoreDTO>(res);
+  },
+  async delete(id: string): Promise<void> {
+    const res = await authedFetch(env.workshopBaseUrl, `/lore/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`${res.status}: ${detail}`);
+    }
+  },
+};
+
 export interface SongDTO {
   id: string;
   scope: "feat" | "party" | "lore";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Music, Sparkles, AlertTriangle, Disc3 } from "lucide-react";
+import { Music, Sparkles, AlertTriangle, Disc3, BookOpen, Plus } from "lucide-react";
 import {
   Button,
   Card,
@@ -17,9 +17,11 @@ import {
   workshop,
   reroll,
   parties,
+  lore as loreApi,
   type SongDTO,
   type RerollCharacter,
   type PartyDTO,
+  type LoreDTO,
 } from "@/lib/api";
 
 type Scope = "feat" | "party" | "lore";
@@ -38,7 +40,7 @@ const SCOPES: { key: Scope; label: string; flavor: string }[] = [
   {
     key: "lore",
     label: "World lore",
-    flavor: "Song of the land — coming soon.",
+    flavor: "Song of the land — pick a page from your book.",
   },
 ];
 
@@ -53,16 +55,22 @@ export function BardStage() {
   const [library, setLibrary] = useState<SongDTO[] | null>(null);
   const [characters, setCharacters] = useState<RerollCharacter[]>([]);
   const [userParties, setUserParties] = useState<PartyDTO[]>([]);
+  const [loreEntries, setLoreEntries] = useState<LoreDTO[]>([]);
+  const [newLoreTitle, setNewLoreTitle] = useState("");
+  const [newLoreBody, setNewLoreBody] = useState("");
+  const [forging, setForging] = useState(false);
 
   useEffect(() => {
     void Promise.all([
       reroll.listCharacters().catch(() => [] as RerollCharacter[]),
       parties.list().catch(() => [] as PartyDTO[]),
       workshop.listSongs().catch(() => [] as SongDTO[]),
-    ]).then(([cs, ps, songs]) => {
+      loreApi.list().catch(() => [] as LoreDTO[]),
+    ]).then(([cs, ps, songs, lor]) => {
       setCharacters(cs);
       setUserParties(ps);
       setLibrary(songs);
+      setLoreEntries(lor);
     });
   }, []);
 
@@ -78,12 +86,40 @@ export function BardStage() {
     if (scope === "party") {
       return userParties.map((p) => ({ id: p.id, label: p.name }));
     }
+    if (scope === "lore") {
+      return loreEntries.map((l) => ({ id: l.id, label: l.title }));
+    }
     return [];
-  }, [scope, characters, userParties]);
+  }, [scope, characters, userParties, loreEntries]);
+
+  async function forgeLore() {
+    const title = newLoreTitle.trim();
+    const body = newLoreBody.trim();
+    if (!title || !body) {
+      toast("A title and a few lines, traveller.", { tone: "error" });
+      return;
+    }
+    setForging(true);
+    try {
+      const created = await loreApi.create({ title, body });
+      setLoreEntries((cur) => [created, ...cur]);
+      setSourceId(created.id);
+      setNewLoreTitle("");
+      setNewLoreBody("");
+      toast("Inked into the book.", { tone: "success" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "The ink ran.";
+      toast(msg.replace(/^\d+:\s*/, ""), { tone: "error" });
+    } finally {
+      setForging(false);
+    }
+  }
 
   async function sing() {
-    if (scope !== "lore" && !sourceId) {
-      toast("Pick a hero or a party first.", { tone: "error" });
+    if (!sourceId) {
+      const what =
+        scope === "feat" ? "hero" : scope === "party" ? "party" : "lore entry";
+      toast(`Pick a ${what} first.`, { tone: "error" });
       return;
     }
     if (!prompt.trim()) {
@@ -95,7 +131,7 @@ export function BardStage() {
     try {
       const song = await workshop.createSong({
         scope,
-        source_id: scope === "lore" ? null : sourceId,
+        source_id: sourceId,
         prompt: prompt.trim(),
         genre: genre.trim() || "medieval tavern folk",
       });
@@ -121,19 +157,17 @@ export function BardStage() {
           <Label>What shall the bard sing of?</Label>
           <div className="grid gap-2 sm:grid-cols-3">
             {SCOPES.map((s) => {
-              const disabled = s.key === "lore"; // lore CRUD not yet implemented
               const active = scope === s.key;
               return (
                 <button
                   key={s.key}
                   type="button"
-                  disabled={disabled}
-                  onClick={() => !disabled && setScope(s.key)}
+                  onClick={() => setScope(s.key)}
                   className={`rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold ${
                     active
                       ? "border-tavern-ale bg-tavern-ale/15 text-tavern-parchment"
                       : "border-tavern-stone/30 bg-tavern-night/50 text-tavern-parchment/80 hover:border-tavern-ale/60"
-                  } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
+                  }`}
                   aria-pressed={active}
                 >
                   <div className="font-heading text-xs uppercase tracking-[0.25em]">
@@ -148,33 +182,70 @@ export function BardStage() {
           </div>
         </div>
 
-        {scope !== "lore" && (
-          <div>
-            <Label htmlFor="bard-source">
-              {scope === "feat" ? "Which hero?" : "Which party?"}
-            </Label>
-            {sources.length === 0 ? (
-              <p className="text-xs italic text-tavern-parchment/55">
-                {scope === "feat"
-                  ? "No heroes yet — seat one at the Round Table."
-                  : "No parties yet — found one at the Notice Board."}
-              </p>
-            ) : (
-              <select
-                id="bard-source"
-                value={sourceId}
-                onChange={(e) => setSourceId(e.target.value)}
-                className="w-full rounded-lg border border-tavern-stone/35 bg-tavern-night px-3 py-2 text-sm text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+        <div>
+          <Label htmlFor="bard-source">
+            {scope === "feat"
+              ? "Which hero?"
+              : scope === "party"
+                ? "Which party?"
+                : "Which lore?"}
+          </Label>
+          {sources.length === 0 ? (
+            <p className="text-xs italic text-tavern-parchment/55">
+              {scope === "feat"
+                ? "No heroes yet — seat one at the Round Table."
+                : scope === "party"
+                  ? "No parties yet — found one at the Notice Board."
+                  : "No lore inked yet — forge a first piece below."}
+            </p>
+          ) : (
+            <select
+              id="bard-source"
+              value={sourceId}
+              onChange={(e) => setSourceId(e.target.value)}
+              className="w-full rounded-lg border border-tavern-stone/35 bg-tavern-night px-3 py-2 text-sm text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+            >
+              <option value="">choose one…</option>
+              {sources.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {scope === "lore" && (
+          <Card compact className="border-tavern-stone/30">
+            <div className="flex items-center gap-2 font-heading text-xs uppercase tracking-[0.25em] text-tavern-parchment/70">
+              <BookOpen className="h-3.5 w-3.5 text-tavern-ale" />
+              Forge a new piece of lore
+            </div>
+            <div className="mt-3 space-y-2">
+              <Input
+                placeholder="Title — e.g. The Burned Harbor"
+                value={newLoreTitle}
+                onChange={(e) => setNewLoreTitle(e.target.value)}
+                aria-label="Lore title"
+              />
+              <Textarea
+                rows={3}
+                placeholder="A few lines about the place, the legend, or the night it all went wrong."
+                value={newLoreBody}
+                onChange={(e) => setNewLoreBody(e.target.value)}
+                aria-label="Lore body"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={forgeLore}
+                disabled={forging || !newLoreTitle.trim() || !newLoreBody.trim()}
               >
-                <option value="">choose one…</option>
-                {sources.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+                <Plus className="h-3.5 w-3.5" />
+                {forging ? "inking…" : "ink it"}
+              </Button>
+            </div>
+          </Card>
         )}
 
         <div>
@@ -201,7 +272,7 @@ export function BardStage() {
         <Button
           size="lg"
           onClick={sing}
-          disabled={submitting || (scope !== "lore" && !sourceId) || !prompt.trim()}
+          disabled={submitting || !sourceId || !prompt.trim()}
         >
           <Music className="h-4 w-4" />
           {submitting ? "the bard tunes…" : "sing the song"}

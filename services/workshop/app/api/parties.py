@@ -210,11 +210,32 @@ def patch_member(
     body: MemberPatchBody,
     user: CurrentUser = Depends(get_current_user),
 ):
+    """Edit a party_member row.
+
+    RLS already restricts who can update which row (the member themselves
+    or the party owner). This route adds a field-level guard: only the
+    party owner may change ``role`` — otherwise a member could self-promote
+    to leader via a direct PATCH.
+    """
     db = user_client(user.token)
     patch: dict[str, Any] = {}
     if body.character_id is not None:
         patch["character_id"] = body.character_id
     if body.role is not None:
+        # Field-level authz: only the owner may change role.
+        party = (
+            db.table("parties")
+            .select("owner_id")
+            .eq("id", party_id)
+            .execute()
+        )
+        if not party.data:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Party not found")
+        if party.data[0]["owner_id"] != user.id:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only the leader may reassign party roles.",
+            )
         patch["role"] = body.role
     if not patch:
         raise HTTPException(
@@ -240,8 +261,21 @@ def remove_member(
     user_id: str,
     user: CurrentUser = Depends(get_current_user),
 ):
+    """Remove a member from a party.
+
+    RLS restricts who may delete which row (the member themselves or the
+    party owner). When ``data`` is empty after delete, the row either
+    didn't exist OR RLS filtered it — we surface a 404 so callers don't
+    incorrectly assume the action succeeded.
+    """
     db = user_client(user.token)
-    db.table("party_members").delete().eq("party_id", party_id).eq(
-        "user_id", user_id
-    ).execute()
+    res = (
+        db.table("party_members")
+        .delete()
+        .eq("party_id", party_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Member not found")
     return None

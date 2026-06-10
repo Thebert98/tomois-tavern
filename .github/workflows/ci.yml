@@ -7,7 +7,7 @@ on:
 
 jobs:
   web:
-    name: web — type-check + build
+    name: web — type-check + build + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +24,11 @@ jobs:
         run: pnpm type-check
       - name: Build
         run: pnpm build
+      - name: Test
+        run: pnpm --filter @tomois/web test
 
   workshop:
-    name: workshop — import + lint
+    name: workshop — pytest
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -52,8 +54,5 @@ jobs:
           cache-dependency-path: services/workshop/requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Import smoke test
-        # No pytest suite exists yet (see AUDIT.md R1). At minimum we
-        # gate every PR on the module being importable so a syntax or
-        # signature error in the workshop fails CI loudly.
-        run: python -c "from app.main import app; print('workshop OK')"
+      - name: Pytest
+        run: pytest

@@ -102,7 +102,16 @@ export function CharacterCard({
                   {portrait.is_current ? "vision set" : "vision drafted"}
                 </Chip>
               ) : (
-                <Chip tone="muted">no vision yet</Chip>
+                // Empty-state chip is a deep-link to the Mirror room with
+                // this hero pre-selected. Teaches the cross-room flow
+                // without a separate explainer.
+                <Link
+                  href={`/mirror?character=${c.id}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-tavern-stone/40 bg-tavern-night/40 px-2 py-0.5 font-heading text-[0.6rem] uppercase tracking-[0.18em] text-tavern-parchment/65 hover:border-tavern-gold hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  summon at the mirror →
+                </Link>
               )}
             </div>
           </div>
@@ -125,7 +134,7 @@ export function CharacterCard({
               level up
             </button>
             <Link
-              href="/mirror"
+              href={`/mirror?character=${c.id}`}
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-heading text-[0.6rem] uppercase tracking-[0.2em] text-tavern-parchment/70 hover:bg-tavern-night/40 hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
             >
               <Sparkles className="h-3 w-3" />

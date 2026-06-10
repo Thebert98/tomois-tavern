@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -34,6 +35,8 @@ interface Character {
 
 export function MirrorRoom() {
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const deepLinkCharacterId = searchParams?.get("character") ?? null;
   const [characters, setCharacters] = useState<Character[] | null>(null);
   const [chosen, setChosen] = useState<Character | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -52,11 +55,18 @@ export function MirrorRoom() {
       if (cancelled) return;
       setCharacters(chars);
       setAllPortraits(portraits);
+      // Deep-link: if /mirror?character=<id> matches a hero in the roster,
+      // pre-select them so the cross-room "summon at the mirror" flow
+      // from CharacterCard lands ready to paint.
+      if (deepLinkCharacterId) {
+        const match = chars.find((c) => c.id === deepLinkCharacterId);
+        if (match) setChosen(match);
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [deepLinkCharacterId]);
 
   useEffect(() => {
     if (!chosen) {

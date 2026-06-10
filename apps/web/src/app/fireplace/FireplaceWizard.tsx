@@ -7,7 +7,7 @@ import { AlertTriangle, Dices, Flame } from "lucide-react";
 import { Button, Card } from "@tomois/ui";
 import { Wizard, type WizardStep } from "@/components/wizard/Wizard";
 import { RollingDialog, type RollingHero } from "@/components/RollingDialog";
-import { reroll } from "@/lib/api";
+import { ensureFreshSession, reroll } from "@/lib/api";
 import { fieldValue, sheetFromPicks } from "@/lib/sheet";
 import { playSfx } from "@/lib/sfx";
 import {
@@ -224,6 +224,11 @@ export function FireplaceWizard() {
     setWhisper(state.vibe.trim());
     setStage("rolling");
     try {
+      // Refresh the JWT BEFORE the multi-step create→update→generate
+      // sequence so an expiry mid-flight can't strand a half-built
+      // character. authedFetch also retries once on a fresh 401, but the
+      // proactive refresh saves the round-trip in the common case.
+      await ensureFreshSession();
       const created = await reroll.createCharacter(rowName);
       setRolledId(created.id);
       // Cascade-fill any structural slot the player left empty. User picks
@@ -300,6 +305,7 @@ export function FireplaceWizard() {
     setWhisper("");
     setStage("rolling");
     try {
+      await ensureFreshSession();
       const rowName = workingTitle();
       const created = await reroll.createCharacter(rowName);
       setRolledId(created.id);

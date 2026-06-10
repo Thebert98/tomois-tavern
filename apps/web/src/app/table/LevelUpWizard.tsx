@@ -9,7 +9,7 @@ import {
   Modal,
   useToast,
 } from "@tomois/ui";
-import { reroll, type RerollCharacter } from "@/lib/api";
+import { ensureFreshSession, reroll, type RerollCharacter } from "@/lib/api";
 import { playSfx } from "@/lib/sfx";
 import { fieldValue, type Sheet } from "@/lib/sheet";
 import {
@@ -294,6 +294,11 @@ export function LevelUpWizard({
     setWhisper(state.notes.trim());
     setStage("rolling");
     try {
+      // Proactive JWT refresh — the climb runs update→generate against
+      // ReRoll. If the session expired between getSession() in the page
+      // and the server reading the bearer, the wizard would strand the
+      // sheet half-patched.
+      await ensureFreshSession();
       const finalStats = applyAsiToStats(state.baseStats, state.asi);
       const mergedSpells = Array.from(
         new Set([...state.currentSpells, ...state.spellsAdded]),
@@ -371,6 +376,7 @@ export function LevelUpWizard({
     setWhisper("");
     setStage("rolling");
     try {
+      await ensureFreshSession();
       const patched = patchedSheet(
         character.sheet as Sheet,
         initial.target,

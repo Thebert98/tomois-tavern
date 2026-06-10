@@ -12,7 +12,7 @@ import {
   Textarea,
   useToast,
 } from "@tomois/ui";
-import { reroll, type RerollCharacter } from "@/lib/api";
+import { ensureFreshSession, reroll, type RerollCharacter } from "@/lib/api";
 import { playSfx } from "@/lib/sfx";
 import { getField, setField, type SheetField } from "@/lib/sheet";
 import { FieldLock } from "@/components/wizard/FieldLock";
@@ -118,6 +118,9 @@ export function EditCharacterModal({
     setGenerating(true);
     setErrors([]);
     try {
+      // The reroll path may do update→generate back-to-back; refresh the
+      // JWT first so an expiry between calls can't strand the sheet.
+      await ensureFreshSession();
       if (dirty && sheet) {
         const nm = sheetName();
         await reroll.update(character.id, {

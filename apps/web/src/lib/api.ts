@@ -3,10 +3,36 @@
 import { supabaseBrowser } from "./supabase/client";
 import { env } from "./env";
 
+/**
+ * Proactively refresh the Supabase session if its access_token is close
+ * to expiry. Multi-step wizard submits (Fireplace `create→update→generate`,
+ * LevelUp `update→generate`) used to strand partial state when the JWT
+ * expired mid-sequence; calling this once before the first network step
+ * eliminates that whole class of failure.
+ *
+ * The Supabase SDK auto-refreshes proactively too, but only on a timer —
+ * a long-idle tab can still hit a request with a stale token.
+ */
+export async function ensureFreshSession(): Promise<void> {
+  const sb = supabaseBrowser();
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+  if (!session) return; // not signed in — let the next call reject loudly
+  const expiresAt = session.expires_at ?? 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  // Refresh if we're within 60s of expiry. Conservative — refreshes are
+  // cheap and idempotent at the SDK layer.
+  if (expiresAt - nowSec < 60) {
+    await sb.auth.refreshSession();
+  }
+}
+
 async function authedFetch(
   baseUrl: string,
   path: string,
   init: RequestInit = {},
+  _retried: boolean = false,
 ): Promise<Response> {
   const sb = supabaseBrowser();
   const {
@@ -20,7 +46,17 @@ async function authedFetch(
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  return fetch(`${baseUrl}${path}`, { ...init, headers });
+  const res = await fetch(`${baseUrl}${path}`, { ...init, headers });
+  // One-shot recovery on 401: the token expired between getSession() and
+  // the server reading it (rare but real). Refresh and retry exactly once.
+  // Without this retry, a single stale request would stop a wizard mid-flow.
+  if (res.status === 401 && !_retried) {
+    const { data, error } = await sb.auth.refreshSession();
+    if (!error && data.session) {
+      return authedFetch(baseUrl, path, init, true);
+    }
+  }
+  return res;
 }
 
 async function asJson<T>(res: Response): Promise<T> {

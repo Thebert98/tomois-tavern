@@ -141,9 +141,17 @@ export function EditCharacterModal({
       }
       onChanged();
     } catch (e) {
-      toast(e instanceof Error ? e.message : "The fire wouldn't catch.", {
-        tone: "error",
-      });
+      const msg = e instanceof Error ? e.message : String(e);
+      // Mirror Fireplace + LevelUp's friendly copy when the per-user
+      // 20/day rate-limit fires (ReRoll surfaces it as a 429).
+      if (msg.includes("429")) {
+        toast(
+          "The fire is spent for the day (20 rerolls/day). Try again tomorrow.",
+          { tone: "error" },
+        );
+      } else {
+        toast(msg || "The fire wouldn't catch.", { tone: "error" });
+      }
     } finally {
       setGenerating(false);
     }

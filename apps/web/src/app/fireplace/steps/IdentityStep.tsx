@@ -50,6 +50,44 @@ export function IdentityStep({
   function toggleLock(key: string) {
     set({ locks: { ...state.locks, [key]: !(state.locks[key] ?? false) } });
   }
+
+  /**
+   * Setter that unlocks the field whenever its value actually changes —
+   * a lock means "keep THIS value", so editing the value while it's
+   * locked is almost certainly the player intending to free it (F3).
+   */
+  function setWithUnlock<K extends keyof FireplaceState>(
+    key: K,
+    value: FireplaceState[K],
+    extra: Partial<FireplaceState> = {},
+  ) {
+    const previous = state[key];
+    if (previous !== value && state.locks[key as string]) {
+      set({
+        [key]: value,
+        locks: { ...state.locks, [key as string]: false },
+        ...extra,
+      } as Partial<FireplaceState>);
+    } else {
+      set({ [key]: value, ...extra } as Partial<FireplaceState>);
+    }
+  }
+
+  /**
+   * When the class flips to a non-caster while spells were picked, drop
+   * the picks so they don't silently disappear on submit (F2). The
+   * SpellsStep is already gated on isCaster, so the player wouldn't
+   * see a Spells step on the way back anyway.
+   */
+  function changeClass(v: string) {
+    const becomesNonCaster =
+      (CLASS_INFO[v]?.caster ?? "none") === "none" && state.spells.length > 0;
+    const extra: Partial<FireplaceState> = becomesNonCaster
+      ? { spells: [] }
+      : {};
+    setWithUnlock("char_class", v, extra);
+  }
+
   return (
     <div className="space-y-4">
       <LockedField
@@ -64,7 +102,7 @@ export function IdentityStep({
           autoFocus
           placeholder="Kael Stormbreaker"
           value={state.name}
-          onChange={(e) => set({ name: e.target.value })}
+          onChange={(e) => setWithUnlock("name", e.target.value)}
         />
       </LockedField>
 
@@ -81,7 +119,7 @@ export function IdentityStep({
             options={RACE_NAMES}
             describe={asiSummary}
             placeholder="Pick a heritage (optional)"
-            onChange={(v) => set({ race: v })}
+            onChange={(v) => setWithUnlock("race", v)}
           />
         </LockedField>
 
@@ -97,7 +135,7 @@ export function IdentityStep({
             options={CLASS_NAMES}
             describe={classSummary}
             placeholder="Pick a calling"
-            onChange={(v) => set({ char_class: v })}
+            onChange={changeClass}
           />
         </LockedField>
       </div>
@@ -114,7 +152,7 @@ export function IdentityStep({
           options={BACKGROUND_NAMES}
           describe={backgroundSummary}
           placeholder="Pick a past (optional)"
-          onChange={(v) => set({ background: v })}
+          onChange={(v) => setWithUnlock("background", v)}
         />
       </LockedField>
 

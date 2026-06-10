@@ -15,13 +15,14 @@ from urllib.parse import urlparse
 
 from pydantic import Field
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from ..auth import CurrentUser, get_current_user
 from ..db import service_client, user_client
 from ..providers import fal as fal_provider
 from ..providers import storage
+from ..rate_limit import limiter, portrait_limit
 
 router = APIRouter(prefix="/portraits", tags=["mirror"])
 log = logging.getLogger("workshop.mirror")
@@ -82,7 +83,9 @@ async def _run_pipeline(
 
 
 @router.post("", response_model=PortraitResponse)
+@limiter.limit(portrait_limit)
 def create_portrait(
+    request: Request,  # slowapi requires Request to extract the key
     body: PortraitRequest,
     background: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),

@@ -10,11 +10,12 @@ defined in migration 0006.
 import re
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, field_validator
 
 from ..auth import CurrentUser, get_current_user
 from ..db import user_client
+from ..rate_limit import friend_invite_limit, limiter
 
 router = APIRouter(prefix="/friends", tags=["friends"])
 
@@ -74,7 +75,9 @@ def list_friends(user: CurrentUser = Depends(get_current_user)):
 
 
 @router.post("", response_model=FriendDTO, status_code=status.HTTP_201_CREATED)
+@limiter.limit(friend_invite_limit)
 def invite_friend(
+    request: Request,
     body: FriendInviteBody,
     user: CurrentUser = Depends(get_current_user),
 ):

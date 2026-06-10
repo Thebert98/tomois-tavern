@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     # CORS
     frontend_origin: str = "http://localhost:3000"
 
+    # Per-user rate limits (slowapi). The paid providers run real money on
+    # every request; these caps mirror ReRoll's 20/day on /generate and add
+    # a smaller cap on songs (Suno is the priciest) and an hourly cap on
+    # friend invites (bounds the email-enumeration tradeoff documented in
+    # supabase/migrations/0006_user_lookup.sql).
+    daily_portrait_limit: int = 20
+    daily_song_limit: int = 10
+    hourly_friend_invite_limit: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -7,7 +7,7 @@ Pipeline:
 """
 from typing import Optional, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from ..auth import CurrentUser, get_current_user
@@ -15,6 +15,7 @@ from ..db import user_client
 from ..providers import lyrics as lyrics_provider
 from ..providers import suno as suno_provider
 from ..providers import storage
+from ..rate_limit import limiter, song_limit
 
 router = APIRouter(prefix="/songs", tags=["bard"])
 
@@ -36,7 +37,9 @@ class SongResponse(BaseModel):
 
 
 @router.post("", response_model=SongResponse)
+@limiter.limit(song_limit)
 async def create_song(
+    request: Request,
     body: SongRequest,
     user: CurrentUser = Depends(get_current_user),
 ):

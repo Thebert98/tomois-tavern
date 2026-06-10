@@ -40,6 +40,15 @@ async def create_song(
     body: SongRequest,
     user: CurrentUser = Depends(get_current_user),
 ):
+    # PLAN.md notes lore CRUD is intentionally deferred — the UI hides the
+    # scope but a direct POST would route into the lyrics generator and
+    # try to read from an empty world_lore table. Fail loudly with a
+    # tavern-flavoured message until those endpoints land.
+    if body.scope == "lore":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Songs of the land aren't woven yet.",
+        )
     db = user_client(user.token)
 
     pending = (

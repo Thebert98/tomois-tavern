@@ -11,6 +11,9 @@ import datetime as dt
 import logging
 import traceback
 from typing import Any, Optional
+from urllib.parse import urlparse
+
+from pydantic import Field
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -26,7 +29,11 @@ log = logging.getLogger("workshop.mirror")
 
 class PortraitRequest(BaseModel):
     character_id: str
-    prompt: str
+    # 2000 chars is comfortably above the longest distilled prompt
+    # we ever emit (portraitPrompt.ts caps backstory at 260 chars and
+    # personality at 140, plus ~600 chars of equipment/iconography).
+    # Anything larger is almost certainly client error or abuse.
+    prompt: str = Field(min_length=1, max_length=2000)
     aspect_ratio: str = "3:4"
 
 
@@ -234,13 +241,28 @@ def delete_portrait(
 
 
 def _storage_path_from_url(url: str, *, bucket: str) -> Optional[str]:
-    """Extract the object key inside `bucket` from a Supabase public URL.
+    """Extract the object key inside ``bucket`` from a Supabase public URL.
+
     e.g. ``https://.../storage/v1/object/public/portraits/{user}/{file}``
-    → ``{user}/{file}``. Returns None if the URL doesn't match."""
+    → ``{user}/{file}``. Returns ``None`` if the URL doesn't match the
+    expected shape — and logs a warning so orphaned storage objects don't
+    fail silently (the old version's silent skip was the root cause of
+    audit finding W3).
+    """
     if not url:
         return None
-    marker = f"/storage/v1/object/public/{bucket}/"
-    idx = url.find(marker)
-    if idx == -1:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        log.warning("Could not parse storage URL: %r", url)
         return None
-    return url[idx + len(marker) :]
+    marker = f"/storage/v1/object/public/{bucket}/"
+    if marker not in parsed.path:
+        log.warning(
+            "URL doesn't match expected Supabase storage shape "
+            "(bucket=%r): %r",
+            bucket,
+            url,
+        )
+        return None
+    return parsed.path.split(marker, 1)[1]

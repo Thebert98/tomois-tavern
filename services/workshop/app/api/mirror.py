@@ -135,28 +135,32 @@ def set_current_portrait(
     portrait_id: str,
     user: CurrentUser = Depends(get_current_user),
 ):
+    """Mark this portrait as the character's active one.
+
+    Two UPDATEs (clear-all-then-set) was racy: a concurrent call between
+    the two statements would violate the partial unique index
+    ``portraits_one_current_per_character`` and 500. We now go through
+    the ``set_current_portrait`` RPC (migration ``0007``) which does it
+    in a single atomic UPDATE so the in-flight state is never visible.
+    """
     db = user_client(user.token)
-    res = db.table("portraits").select("character_id").eq("id", portrait_id).execute()
+    res = (
+        db.table("portraits")
+        .select("character_id")
+        .eq("id", portrait_id)
+        .execute()
+    )
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Portrait not found")
-    character_id = res.data[0]["character_id"]
-    if not character_id:
+    if not res.data[0]["character_id"]:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Portrait is not linked to a character.",
         )
-    db.table("portraits").update({"is_current": False}).eq(
-        "character_id", character_id
-    ).eq("is_current", True).execute()
-    updated = (
-        db.table("portraits")
-        .update({"is_current": True})
-        .eq("id", portrait_id)
-        .execute()
-    )
-    if not updated.data:
+    rpc = db.rpc("set_current_portrait", {"p_portrait_id": portrait_id}).execute()
+    if not rpc.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Portrait not found")
-    return updated.data[0]
+    return rpc.data
 
 
 @router.delete("/{portrait_id}", status_code=status.HTTP_204_NO_CONTENT)

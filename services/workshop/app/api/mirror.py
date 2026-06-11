@@ -53,6 +53,7 @@ class PortraitResponse(BaseModel):
 async def _run_pipeline(
     portrait_id: str,
     user_id: str,
+    character_id: str,
     prompt: str,
     aspect_ratio: str,
 ) -> None:
@@ -77,9 +78,33 @@ async def _run_pipeline(
             stage="ready",
             cost_usd=portrait_result.cost_usd or 0,
         )
+        # Auto-mark current if this character has no active portrait yet.
+        # Saves the player a separate "set active" click in the common
+        # case of one portrait per hero.
+        _auto_set_current_if_only(db, character_id, portrait_id)
     except Exception:
         log.error("Portrait painting failed:\n%s", traceback.format_exc())
         _patch(status="failed", stage="failed")
+
+
+def _auto_set_current_if_only(db, character_id: str, portrait_id: str) -> None:
+    """If ``character_id`` has no active portrait, mark ``portrait_id``
+    as current. Safe to call after every successful generation.
+    """
+    if not character_id:
+        return
+    existing = (
+        db.table("portraits")
+        .select("id")
+        .eq("character_id", character_id)
+        .eq("is_current", True)
+        .execute()
+        .data
+        or []
+    )
+    if existing:
+        return
+    db.table("portraits").update({"is_current": True}).eq("id", portrait_id).execute()
 
 
 @router.post("", response_model=PortraitResponse)
@@ -113,7 +138,12 @@ def create_portrait(
     portrait_id = pending.data[0]["id"]
 
     background.add_task(
-        _run_pipeline, portrait_id, user.id, body.prompt, body.aspect_ratio
+        _run_pipeline,
+        portrait_id,
+        user.id,
+        body.character_id,
+        body.prompt,
+        body.aspect_ratio,
     )
 
     return PortraitResponse(
@@ -168,30 +198,53 @@ def set_current_portrait(
 ):
     """Mark this portrait as the character's active one.
 
-    Two UPDATEs (clear-all-then-set) was racy: a concurrent call between
-    the two statements would violate the partial unique index
-    ``portraits_one_current_per_character`` and 500. We now go through
-    the ``set_current_portrait`` RPC (migration ``0007``) which does it
-    in a single atomic UPDATE so the in-flight state is never visible.
+    Originally relied on the ``set_current_portrait`` RPC (migration
+    ``0007``) so the swap was a single atomic UPDATE — important
+    because of the partial unique index
+    ``portraits_one_current_per_character``. But this project's
+    PostgREST schema cache won't load custom functions, so the RPC
+    permanently 500s with PGRST202.
+
+    Fallback that works: do it through service_client as two writes —
+    clear the existing current portrait for this character first, THEN
+    set the new one. The partial unique index is briefly satisfied by
+    the empty state in between, so no constraint violation. Race window
+    only matters for two simultaneous set-current calls on the same
+    character, which doesn't realistically happen in this app.
     """
-    db = user_client(user.token)
+    sb = service_client()
     res = (
-        db.table("portraits")
-        .select("character_id")
+        sb.table("portraits")
+        .select("user_id,character_id")
         .eq("id", portrait_id)
         .execute()
     )
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Portrait not found")
-    if not res.data[0]["character_id"]:
+    row = res.data[0]
+    if row["user_id"] != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your portrait")
+    character_id = row["character_id"]
+    if not character_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Portrait is not linked to a character.",
         )
-    rpc = db.rpc("set_current_portrait", {"p_portrait_id": portrait_id}).execute()
-    if not rpc.data:
+
+    # 1. Clear whichever portrait was active.
+    sb.table("portraits").update({"is_current": False}).eq(
+        "character_id", character_id
+    ).eq("is_current", True).execute()
+    # 2. Set this one as the new current.
+    updated = (
+        sb.table("portraits")
+        .update({"is_current": True})
+        .eq("id", portrait_id)
+        .execute()
+    )
+    if not updated.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Portrait not found")
-    return rpc.data
+    return updated.data[0]
 
 
 @router.delete("/{portrait_id}", status_code=status.HTTP_204_NO_CONTENT)

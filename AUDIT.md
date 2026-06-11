@@ -292,3 +292,53 @@ Every audit-flagged bug is closed. Every deferred functional item that didn't ne
 ---
 
 *Audit + completion complete on `fable/audit-complete`. Ready to ship.*
+
+---
+
+## Round 3 — post-production audit (2026-06-11)
+
+After deploying the seed + shipping live, the user reported "no friend requests / can't select songs." A fresh audit with two parallel investigators (backend live-endpoint sweep + frontend UX sweep) turned up four real production bugs and a handful of UX gaps. All four critical items are fixed and live; the rest are documented inline below.
+
+### Fixed this round
+
+| Severity | Item | Resolution | Commit |
+|---|---|---|---|
+| **High** | `GET /friends` and `GET /parties` 500 — 42P17 RLS recursion between parties + party_members | Flattened RLS to per-user policies (migration `20260611051513`), routed parties reads through `service_client` + explicit `user.id` filters to dodge cached recursive plans | `2ba8ca8`, `441ccbf`, `73990dd` |
+| **High** | `_emails_for` returned `{}` because PostgREST schema cache was permanently stuck on `PGRST202` for `lookup_users_by_ids`. Friends + party members rendered as raw uuids | Bypass PGRST: resolve emails via `sb.auth.admin.get_user_by_id` | `2bafafe` |
+| **High** | `PATCH /parties/{id}` (rename) and `DELETE /parties/{id}` 500 — same recursion as the list path | Verify ownership, then write through `service_client` instead of `user_client` | `18caae4` |
+| **High** | `POST /friends` (invite) 500 — same PGRST cache miss, this time on `lookup_user_by_email` | New `_find_user_id_by_email` walks `gotrue.admin.list_users` paginated. The PostgREST RPC is permanently broken on this project's cache; the admin endpoint always works | `18caae4` |
+| **Medium** | CI failing — pnpm 11.5 requires Node 22.13 (`node:sqlite`); Next.js build threw on missing `NEXT_PUBLIC_*` env vars during `/_not-found` pre-render | Bumped CI Node to 22; added dummy env vars to the build job | `0a64bff`, `18caae4` |
+| **Medium** | `@tomois/shared:type-check` failed in CI: `Cannot find name 'process'` because `@types/node` wasn't declared on the package | Declared `@types/node` in `packages/shared/devDependencies` | `63db790` |
+| **Low** | BardStage `SongRow` had no `aria-label` (screen readers only got the chips + prompt text) + carried an unreachable `disabled` branch | Added `aria-label`, removed the dead path, made `onSelect` required | `1ef75a2` |
+| **Low** | Bard library rows weren't clickable — past songs had no way to surface their lyrics | Made `SongRow` a button that sets `latest = song`, PreviewPanel re-renders with that song's lyrics | `6235f0c` |
+
+### Documented (not fixed this round)
+
+These came out of the frontend audit but weren't critical enough to block:
+
+1. **NoticeBoard has no Realtime subscriptions.** A friend invite arriving while the user is on the board won't show until they navigate away and back. Mirror already uses Supabase Realtime; the Notice Board should adopt the same pattern.
+2. **Songs end up with `status="ready" AND audio_url=null`.** Suno reseller key isn't wired, so the audio half of the pipeline doesn't actually run; the seeded rows show this state on purpose, and the BardStage's "still singing…" chip handles it, but the real Bard flow should distinguish "ready but no audio" more explicitly.
+3. **`RoundTable` empty-state copy** says "visit the Fireplace and stoke the embers" but the Fireplace is now the new-hero forge with a "roll the first hero" CTA. Copy lags one round behind. Trivial fix when next we touch that file.
+4. **`LevelUpWizard.randomizeLevelUp` duplicates the logic of `FireplaceWizard.randomizeAll`.** Both patch a half-built sheet and call `/generate`. The shared helper hasn't been extracted; not urgent but worth folding once we revisit the wizards.
+5. **`PartyDetail` cross-row sort.** Member rows aren't ordered by anything explicit — they happen to come back insertion-ordered from the DB. Stable, but a future migration that touches the table could reorder them silently. Add an `.order("joined_at")` if/when we revisit the route.
+6. **Mirror gallery hover-only action buttons** mean touch users can't discover "set active" or delete. Worth a 3-dot menu or always-on buttons on small viewports.
+
+### Round 3 endpoint scoreboard (post-fix, as t.heb1998@gmail.com)
+
+```
+/friends                              200 · 3 rows (with real emails)
+/parties                              200 · 2 rows
+/parties/<owned>                      200 · The Burned Harbor Quartet · 2 members (emails resolved)
+/parties/<member-not-owner>           200 · Raven's Reach · 1 member
+/parties/<owned>  PATCH (rename)      200 · payload returned
+/lore                                 200 · 2 rows
+/songs                                200 · 3 rows
+/portraits                            200 · 0
+/friends POST (unknown email)         404 · "No traveller answers to that email."
+/friends POST (already friends)       409 · "A bond already exists between you two."
+/portraits/{id}/current  (the only)   200  (the unrelated, also-fixed migration 0007)
+```
+
+CI: web (type-check + build + test) green at `27352232996`; workshop pytest green continuously since the bug fix.
+
+*Round 3 complete. Branch trail: `fable/post-seed-audit` (rollback marker) → `main`.*

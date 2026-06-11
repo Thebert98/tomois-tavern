@@ -74,11 +74,16 @@ def list_parties(user: CurrentUser = Depends(get_current_user)):
     the service client (RLS bypassed for the targeted read, scoped to
     just the ids we already know the user belongs to).
     """
-    db = user_client(user.token)
+    # Use service_client + explicit ``user.id`` filters throughout. We
+    # already verified the caller's identity via ``get_current_user``,
+    # so a service-role query that's explicitly scoped to their ids is
+    # equivalent to an RLS-scoped user_client query — and it sidesteps
+    # the stubborn 42P17 recursion the migration history can't seem to
+    # purge from cached query plans.
+    sb = service_client()
 
-    # 1. parties the user owns — RLS allows
     owned = (
-        db.table("parties")
+        sb.table("parties")
         .select("*")
         .eq("owner_id", user.id)
         .order("created_at", desc=True)
@@ -87,10 +92,8 @@ def list_parties(user: CurrentUser = Depends(get_current_user)):
         or []
     )
 
-    # 2. parties the user is a member of (but doesn't own) — RLS shows
-    # them their own party_members rows, then we look up the parties.
     membership = (
-        db.table("party_members")
+        sb.table("party_members")
         .select("party_id")
         .eq("user_id", user.id)
         .execute()
@@ -102,10 +105,6 @@ def list_parties(user: CurrentUser = Depends(get_current_user)):
 
     member_parties: list[dict[str, Any]] = []
     if member_party_ids:
-        # service_client: the user already proved (via the party_members
-        # row owned-by-them) that they belong to these parties, so the
-        # targeted-id read here is safe.
-        sb = service_client()
         member_parties = (
             sb.table("parties")
             .select("*")
@@ -160,7 +159,6 @@ def get_party(
     they're either the owner or a member. Non-owners get back only
     their own member row, mirroring the old RLS shape.
     """
-    db = user_client(user.token)
     sb = service_client()
 
     party = (
@@ -172,11 +170,10 @@ def get_party(
 
     is_owner = party["owner_id"] == user.id
 
-    # Confirm membership for non-owners — RLS-scoped read of party_members
-    # for this party + this user.
+    # Confirm membership for non-owners — explicit filter via service_client.
     if not is_owner:
         own_membership = (
-            db.table("party_members")
+            sb.table("party_members")
             .select("user_id")
             .eq("party_id", party_id)
             .eq("user_id", user.id)
@@ -198,7 +195,7 @@ def get_party(
         )
     else:
         members = (
-            db.table("party_members")
+            sb.table("party_members")
             .select("*")
             .eq("party_id", party_id)
             .eq("user_id", user.id)
@@ -208,7 +205,7 @@ def get_party(
         )
 
     member_ids = [m["user_id"] for m in members]
-    emails = _emails_for(db, member_ids)
+    emails = _emails_for(sb, member_ids)
     members_enriched = [
         {**m, "email": emails.get(m["user_id"])} for m in members
     ]

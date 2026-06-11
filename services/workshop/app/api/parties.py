@@ -267,6 +267,13 @@ def add_member(
     body: MemberAddBody,
     user: CurrentUser = Depends(get_current_user),
 ):
+    """Seat someone at the party. Only the owner can do this.
+
+    After flattening the party_members RLS so each user only INSERTs
+    their own row, an owner adding a friend would no longer match RLS.
+    The owner is verified by the explicit ``party_res`` check above, so
+    we can safely use ``service_client`` for the actual write.
+    """
     db = user_client(user.token)
     party_res = (
         db.table("parties").select("owner_id").eq("id", party_id).execute()
@@ -289,8 +296,9 @@ def add_member(
         "character_id": body.character_id,
         "role": body.role,
     }
+    sb = service_client()
     try:
-        inserted = db.table("party_members").insert(row).execute()
+        inserted = sb.table("party_members").insert(row).execute()
     except Exception as exc:
         # PK collision = already in the party.
         if "duplicate" in str(exc).lower():
@@ -314,17 +322,28 @@ def patch_member(
 ):
     """Edit a party_member row.
 
-    RLS already restricts who can update which row (the member themselves
-    or the party owner). This route adds a field-level guard: only the
-    party owner may change ``role`` — otherwise a member could self-promote
-    to leader via a direct PATCH.
+    Two authz cases:
+      * member editing their own row (character_id) → user_client + RLS
+      * owner editing someone else's row (role or character_id) →
+        verify ownership via the parties table, then service_client
+        for the write (post-flat-RLS, an owner is not the row's user_id
+        and RLS wouldn't permit the write).
+
+    A role change always requires the owner — even on the caller's own
+    row — to prevent self-promotion.
     """
     db = user_client(user.token)
     patch: dict[str, Any] = {}
     if body.character_id is not None:
         patch["character_id"] = body.character_id
-    if body.role is not None:
-        # Field-level authz: only the owner may change role.
+    role_requested = body.role is not None
+
+    is_self = user_id == user.id
+
+    # If role is being touched, verify owner. Same if caller isn't the
+    # row's user (only the owner can edit someone else's row at all).
+    needs_owner = role_requested or not is_self
+    if needs_owner:
         party = (
             db.table("parties")
             .select("owner_id")
@@ -336,15 +355,19 @@ def patch_member(
         if party.data[0]["owner_id"] != user.id:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
-                "Only the leader may reassign party roles.",
+                "Only the leader may make that change.",
             )
-        patch["role"] = body.role
+        if role_requested:
+            patch["role"] = body.role
+
     if not patch:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Nothing to update."
         )
+
+    writer = service_client() if needs_owner else db
     updated = (
-        db.table("party_members")
+        writer.table("party_members")
         .update(patch)
         .eq("party_id", party_id)
         .eq("user_id", user_id)
@@ -365,14 +388,36 @@ def remove_member(
 ):
     """Remove a member from a party.
 
-    RLS restricts who may delete which row (the member themselves or the
-    party owner). When ``data`` is empty after delete, the row either
-    didn't exist OR RLS filtered it — we surface a 404 so callers don't
-    incorrectly assume the action succeeded.
+    Two cases:
+      * member leaving (user_id == auth.uid()) — user_client + RLS works
+      * owner kicking someone else — verify ownership, then service_client
+
+    Returns 404 if the delete affects zero rows so callers can tell
+    whether the action took effect (same pattern as every other
+    endpoint that returns 204 on success).
     """
     db = user_client(user.token)
+    if user_id != user.id:
+        # Owner-kicks-someone-else path.
+        party = (
+            db.table("parties")
+            .select("owner_id")
+            .eq("id", party_id)
+            .execute()
+        )
+        if not party.data:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Party not found")
+        if party.data[0]["owner_id"] != user.id:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Only the leader may remove that member."
+            )
+        writer = service_client()
+    else:
+        # User leaving on their own.
+        writer = db
+
     res = (
-        db.table("party_members")
+        writer.table("party_members")
         .delete()
         .eq("party_id", party_id)
         .eq("user_id", user_id)

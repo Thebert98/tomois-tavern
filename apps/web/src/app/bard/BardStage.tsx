@@ -413,22 +413,21 @@ function SongRow({
 }: {
   song: SongDTO;
   isActive?: boolean;
-  onSelect?: () => void;
+  onSelect: () => void;
 }) {
   const statusChip = songStatusChip(song.status);
-  const selectable = !!onSelect;
   return (
     <li>
       <button
         type="button"
         onClick={onSelect}
-        disabled={!selectable}
         aria-pressed={isActive ?? undefined}
-        className={`w-full rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold ${
+        aria-label={`Open song: ${song.prompt}`}
+        className={`w-full cursor-pointer rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold ${
           isActive
             ? "border-tavern-ale bg-tavern-ale/15"
             : "border-tavern-stone/30 bg-tavern-night/50 hover:border-tavern-ale/60"
-        } ${selectable ? "cursor-pointer" : "cursor-default"}`}
+        }`}
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">

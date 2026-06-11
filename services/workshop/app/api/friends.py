@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, field_validator
 
 from ..auth import CurrentUser, get_current_user
-from ..db import user_client
+from ..db import service_client, user_client
 from ..rate_limit import friend_invite_limit, limiter
 
 router = APIRouter(prefix="/friends", tags=["friends"])
@@ -43,20 +43,26 @@ class FriendDTO(BaseModel):
 
 
 def _emails_for(db, ids: list[str]) -> dict[str, str]:
-    """Resolve user ids to emails via the SECURITY DEFINER RPC.
+    """Resolve user ids to emails via the gotrue admin endpoint.
 
-    Defensive against PostgREST schema-cache hiccups (see parties.py
-    for the longer note). Emails are non-critical enrichment; falling
-    back to ``{}`` means the UI shows the uuid instead of the email
-    but the endpoint still returns.
+    Replaced the PostgREST-RPC path because this project's PGRST schema
+    cache is stuck on PGRST202 for the lookup function. The auth admin
+    API bypasses PGRST entirely. See parties.py:_emails_for for the
+    longer note.
     """
     if not ids:
         return {}
-    try:
-        res = db.rpc("lookup_users_by_ids", {"p_ids": ids}).execute()
-        return {row["id"]: row["email"] for row in (res.data or [])}
-    except Exception:
-        return {}
+    sb = service_client()
+    out: dict[str, str] = {}
+    for uid in ids:
+        try:
+            res = sb.auth.admin.get_user_by_id(uid)
+            email = getattr(getattr(res, "user", None), "email", None)
+            if email:
+                out[uid] = email
+        except Exception:
+            continue
+    return out
 
 
 @router.get("", response_model=list[FriendDTO])

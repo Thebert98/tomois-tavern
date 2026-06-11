@@ -42,24 +42,36 @@ class MemberPatchBody(BaseModel):
 
 
 def _emails_for(db, ids: list[str]) -> dict[str, str]:
-    """Resolve user ids to emails via the SECURITY DEFINER RPC.
+    """Resolve user ids to emails.
 
-    Defensive: if PostgREST's schema cache is momentarily stale (which
-    has happened on this project after schema changes), the RPC raises
-    PGRST202. We log + return an empty map so callers can still produce
-    a useful response (emails just render as None / fall back to the
-    uuid in the UI). Hard-failing the whole route on a cache miss is a
-    bad trade for a non-critical enrichment.
+    We used to call the ``lookup_users_by_ids`` PostgreSQL function via
+    PostgREST RPC, but the project's PGRST schema cache stayed stuck on
+    PGRST202 for that function after a series of schema changes — making
+    the lookup permanently broken until the next PostgREST restart. The
+    fallback was an empty map, which meant friends + party members
+    rendered as uuids in the UI.
+
+    The robust fix is to use the gotrue admin endpoint directly. The
+    service-role key authorizes ``GET /auth/v1/admin/users/{id}`` for
+    any user, so we just iterate the requested ids. For the small N
+    we ever look up at once (party members, accepted friends + pending
+    invites), the round-trip cost is negligible.
     """
     if not ids:
         return {}
-    try:
-        res = db.rpc("lookup_users_by_ids", {"p_ids": ids}).execute()
-        return {row["id"]: row["email"] for row in (res.data or [])}
-    except Exception:
-        # PGRST202 (schema cache miss) or any other lookup blip. Don't
-        # let it sink the parent endpoint — emails are nice-to-have.
-        return {}
+    sb = service_client()
+    out: dict[str, str] = {}
+    for uid in ids:
+        try:
+            res = sb.auth.admin.get_user_by_id(uid)
+            email = getattr(getattr(res, "user", None), "email", None)
+            if email:
+                out[uid] = email
+        except Exception:
+            # Unknown id / network blip / etc. — fall through; the UI
+            # gracefully shows the uuid for any missing entry.
+            continue
+    return out
 
 
 @router.get("", response_model=list[dict[str, Any]])

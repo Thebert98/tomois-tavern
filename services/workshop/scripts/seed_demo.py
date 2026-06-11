@@ -59,8 +59,15 @@ SB_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@tomois.tavern")
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "demo-tavern-2026")
-FRIEND_EMAIL = os.environ.get("FRIEND_EMAIL", "raven@tomois.tavern")
-FRIEND_PASSWORD = os.environ.get("FRIEND_PASSWORD", "raven-tavern-2026")
+
+# Companion users used to populate friendships + party invites. Passwords
+# are unused outside this script (these users don't sign in for the demo).
+COMPANION_USERS = [
+    ("raven@tomois.tavern", "raven-tavern-2026", "the raven"),
+    ("aldwin@tomois.tavern", "aldwin-tavern-2026", "Aldwin"),
+    ("brenna@tomois.tavern", "brenna-tavern-2026", "Brenna"),
+    ("calder@tomois.tavern", "calder-tavern-2026", "Calder"),
+]
 
 
 # ----------------------------------------------------------------------
@@ -296,12 +303,29 @@ def ensure_user(sb, email: str, password: str) -> str:
         return res.user.id
     except Exception as exc:  # already-exists / network / quota — handle uniformly
         # Find the user by email instead.
-        page = sb.auth.admin.list_users()
-        users = getattr(page, "users", None) or page
+        return find_user_by_email(sb, email) or _raise(
+            f"Couldn't create or find user {email!r}: {exc}", exc
+        )
+
+
+def find_user_by_email(sb, email: str) -> str | None:
+    target = email.lower()
+    page = 1
+    while True:
+        res = sb.auth.admin.list_users(page=page, per_page=200)
+        users = getattr(res, "users", None) or res
+        if not users:
+            return None
         for u in users:
-            if getattr(u, "email", None) == email:
+            if (getattr(u, "email", "") or "").lower() == target:
                 return u.id
-        raise RuntimeError(f"Couldn't create or find user {email!r}: {exc}") from exc
+        page += 1
+        if page > 20:
+            return None
+
+
+def _raise(msg: str, cause: Exception) -> Any:
+    raise RuntimeError(msg) from cause
 
 
 def clean_prior_seed(sb, user_ids: list[str]) -> None:
@@ -342,24 +366,88 @@ def seed_lore(sb, user_id: str) -> list[dict]:
     return rows.data or []
 
 
-def seed_friendship(sb, requester: str, addressee: str) -> None:
+def seed_social(
+    sb,
+    owner_id: str,
+    companions: list[tuple[str, str]],
+) -> dict[str, Any]:
+    """Build a lively Notice Board for ``owner_id``.
+
+    Seeds, in order:
+      * one accepted friendship (companion 0 ↔ owner — the established raven)
+      * one incoming pending request  (companion 1 → owner)  ← needs response
+      * one outgoing pending request (owner → companion 2)  ← awaiting
+      * one party owned by ``owner_id`` with the raven seated
+      * one party owned by the raven with ``owner_id`` seated (so the
+        roster shows the user belongs to more than one)
+
+    Companions is a list of ``(user_id, label)``. Indexed 0..3.
+    """
+    (raven_id, raven_label) = companions[0]
+    (incoming_id, incoming_label) = companions[1]
+    (outgoing_id, outgoing_label) = companions[2]
+
+    # Friendships ------------------------------------------------------
     sb.table("friendships").insert(
-        {"requester_id": requester, "addressee_id": addressee, "status": "accepted"}
-    ).execute()
-
-
-def seed_party(sb, owner_id: str, friend_id: str, first_char_id: str) -> str:
-    p = sb.table("parties").insert(
-        {"owner_id": owner_id, "name": "The Burned Harbor Quartet"}
-    ).execute()
-    party_id = p.data[0]["id"]
-    sb.table("party_members").insert(
         [
-            {"party_id": party_id, "user_id": owner_id, "character_id": first_char_id, "role": "leader"},
-            {"party_id": party_id, "user_id": friend_id, "character_id": None, "role": "scribe"},
+            {"requester_id": raven_id, "addressee_id": owner_id, "status": "accepted"},
+            {"requester_id": incoming_id, "addressee_id": owner_id, "status": "pending"},
+            {"requester_id": owner_id, "addressee_id": outgoing_id, "status": "pending"},
         ]
     ).execute()
-    return party_id
+
+    return {
+        "raven_id": raven_id,
+        "raven_label": raven_label,
+        "incoming_pending_from": incoming_label,
+        "outgoing_pending_to": outgoing_label,
+    }
+
+
+def seed_parties(
+    sb,
+    owner_id: str,
+    raven_id: str,
+    owner_char_ids: list[str],
+) -> list[str]:
+    """One party owned by the user, one party they're invited to."""
+    parties_data = [
+        {"owner_id": owner_id, "name": "The Burned Harbor Quartet"},
+        {"owner_id": raven_id, "name": "Raven's Reach"},
+    ]
+    res = sb.table("parties").insert(parties_data).execute()
+    party_ids = [row["id"] for row in res.data]
+    sb.table("party_members").insert(
+        [
+            # Owner's party — user is leader, raven is a scribe
+            {
+                "party_id": party_ids[0],
+                "user_id": owner_id,
+                "character_id": owner_char_ids[0],
+                "role": "leader",
+            },
+            {
+                "party_id": party_ids[0],
+                "user_id": raven_id,
+                "character_id": None,
+                "role": "scribe",
+            },
+            # Raven's party — user is a member, raven leads
+            {
+                "party_id": party_ids[1],
+                "user_id": raven_id,
+                "character_id": None,
+                "role": "leader",
+            },
+            {
+                "party_id": party_ids[1],
+                "user_id": owner_id,
+                "character_id": owner_char_ids[2] if len(owner_char_ids) > 2 else owner_char_ids[0],
+                "role": "vanguard",
+            },
+        ]
+    ).execute()
+    return party_ids
 
 
 async def seed_portrait_for_aerith(sb, user_id: str, character_id: str) -> str | None:
@@ -393,33 +481,61 @@ async def seed_portrait_for_aerith(sb, user_id: str, character_id: str) -> str |
     return image_url
 
 
-def seed_songs(sb, user_id: str, character_id: str, lore_id: str) -> None:
-    """Insert two pre-composed song rows. ``audio_url`` stays null because
-    we don't have a Suno reseller key wired up; the BardStage library still
-    renders the rows with the 'still singing…' / 'ready' chip + the lyrics
-    body, so the UX is demonstrable end-to-end."""
-    sb.table("bard_songs").insert(
-        [
+def seed_songs(
+    sb,
+    user_id: str,
+    feat_character_id: str,
+    party_id: str | None,
+    lore_id: str | None,
+) -> None:
+    """Insert pre-composed song rows. ``audio_url`` stays null because we
+    don't have a Suno reseller key wired up yet; the BardStage library
+    still renders the rows with the 'still singing…' / 'ready' chip + the
+    lyrics body, so the UX is demonstrable end-to-end.
+
+    Covers every scope:
+      * feat — Aerith's lamp (ready, full lyrics)
+      * party — The Burned Harbor Quartet (still singing — pending row)
+      * lore — The Pact of Embers (ready, full lyrics)
+    """
+    rows: list[dict[str, Any]] = [
+        {
+            "user_id": user_id,
+            "scope": "feat",
+            "source_id": feat_character_id,
+            "prompt": "A quiet hymn for Aerith's lamp, sung at the harbor's edge.",
+            "lyrics": (
+                "Steady the hand that lit the lamp,\n"
+                "Steady the wick, the oil, the flame —\n"
+                "Twelve long winters of salt and damp,\n"
+                "Twelve long names she'd not name in vain.\n\n"
+                "Sailors home through the dark below,\n"
+                "Steer to her light, steer to her light,\n"
+                "Steady the hand and the lamp's soft glow,\n"
+                "Steady the harbor that holds the night."
+            ),
+            "model": "claude-sonnet-4-6",
+            "status": "ready",
+            "duration_s": 90,
+            "cost_usd": 0.0,
+        },
+    ]
+    if party_id:
+        rows.append(
             {
                 "user_id": user_id,
-                "scope": "feat",
-                "source_id": character_id,
-                "prompt": "A quiet hymn for Aerith's lamp, sung at the harbor's edge.",
-                "lyrics": (
-                    "Steady the hand that lit the lamp,\n"
-                    "Steady the wick, the oil, the flame —\n"
-                    "Twelve long winters of salt and damp,\n"
-                    "Twelve long names she'd not name in vain.\n\n"
-                    "Sailors home through the dark below,\n"
-                    "Steer to her light, steer to her light,\n"
-                    "Steady the hand and the lamp's soft glow,\n"
-                    "Steady the harbor that holds the night."
-                ),
+                "scope": "party",
+                "source_id": party_id,
+                "prompt": "A bawdy march about the Quartet's tally of pints and oaths.",
+                "lyrics": None,  # still being composed
                 "model": "claude-sonnet-4-6",
-                "status": "ready",
-                "duration_s": 90,
+                "status": "pending",  # shows the "still singing…" chip
+                "duration_s": None,
                 "cost_usd": 0.0,
-            },
+            }
+        )
+    if lore_id:
+        rows.append(
             {
                 "user_id": user_id,
                 "scope": "lore",
@@ -439,9 +555,9 @@ def seed_songs(sb, user_id: str, character_id: str, lore_id: str) -> None:
                 "status": "ready",
                 "duration_s": 110,
                 "cost_usd": 0.0,
-            },
-        ]
-    ).execute()
+            }
+        )
+    sb.table("bard_songs").insert(rows).execute()
 
 
 # ----------------------------------------------------------------------
@@ -456,40 +572,81 @@ def main() -> int:
         action="store_true",
         help="Skip the fal.ai call even if FAL_KEY is set (saves ~$0.06).",
     )
+    parser.add_argument(
+        "--owner-id",
+        help=(
+            "Existing auth.users uuid to seed under, instead of creating "
+            "the default demo@tomois.tavern user. Use this to attach the "
+            "demo state to a real account."
+        ),
+    )
+    parser.add_argument(
+        "--owner-email",
+        help=(
+            "Like --owner-id but looks up the uuid by email. Errors out if "
+            "the user doesn't exist; this script never modifies a real "
+            "person's auth row."
+        ),
+    )
     args = parser.parse_args()
 
     sb = create_client(SB_URL, SB_SERVICE_KEY)
     print(f"  → connected to {SB_URL}")
 
-    print("  → ensuring demo users…")
-    demo_id = ensure_user(sb, DEMO_EMAIL, DEMO_PASSWORD)
-    friend_id = ensure_user(sb, FRIEND_EMAIL, FRIEND_PASSWORD)
-    print(f"    demo  {demo_id}  ({DEMO_EMAIL})")
-    print(f"    raven {friend_id}  ({FRIEND_EMAIL})")
+    # Resolve owner. Three modes: --owner-id, --owner-email, or the
+    # default demo@tomois.tavern (created/ensured).
+    if args.owner_id:
+        owner_id = args.owner_id
+        owner_label = f"user {owner_id}"
+        owner_signin = "(use your existing credentials)"
+    elif args.owner_email:
+        looked = find_user_by_email(sb, args.owner_email)
+        if not looked:
+            print(f"ERROR: no user with email {args.owner_email!r}.", file=sys.stderr)
+            return 1
+        owner_id = looked
+        owner_label = f"{args.owner_email} ({owner_id})"
+        owner_signin = "(use your existing credentials)"
+    else:
+        owner_id = ensure_user(sb, DEMO_EMAIL, DEMO_PASSWORD)
+        owner_label = f"{DEMO_EMAIL} ({owner_id})"
+        owner_signin = f"{DEMO_EMAIL}  /  {DEMO_PASSWORD}"
 
+    print(f"  → owner: {owner_label}")
+
+    print("  → ensuring companion users…")
+    companions: list[tuple[str, str]] = []  # (user_id, label)
+    for email, password, label in COMPANION_USERS:
+        cid = ensure_user(sb, email, password)
+        companions.append((cid, label))
+        print(f"    {label} {cid}")
+
+    # Scrub prior seed data across all touched users so re-runs are clean.
     print("  → scrubbing prior seed data…")
-    clean_prior_seed(sb, [demo_id, friend_id])
+    all_ids = [owner_id] + [c[0] for c in companions]
+    clean_prior_seed(sb, all_ids)
 
-    print("  → seeding characters…")
-    chars = seed_characters(sb, demo_id)
+    print("  → seeding characters under the owner…")
+    chars = seed_characters(sb, owner_id)
     aerith = chars[0]
     print(f"    {len(chars)} characters seated at the Round Table")
 
     print("  → seeding world lore…")
-    lore_rows = seed_lore(sb, demo_id)
+    lore_rows = seed_lore(sb, owner_id)
     print(f"    {len(lore_rows)} pages inked into the book")
 
-    print("  → seeding friendship + party…")
-    seed_friendship(sb, demo_id, friend_id)
-    party_id = seed_party(sb, demo_id, friend_id, aerith["id"])
-    print(f"    party {party_id} posted to the Notice Board")
+    print("  → seeding friendships + parties…")
+    social = seed_social(sb, owner_id, companions)
+    party_ids = seed_parties(sb, owner_id, social["raven_id"], [c["id"] for c in chars])
+    print(f"    1 accepted friendship + 1 incoming + 1 outgoing pending")
+    print(f"    2 parties (1 owned + 1 invited): {', '.join(party_ids)}")
 
     if args.skip_portrait:
         print("  → skipping portrait (--skip-portrait)")
         portrait_url = None
     else:
         print("  → painting Aerith at the mirror (fal.ai)…")
-        portrait_url = asyncio.run(seed_portrait_for_aerith(sb, demo_id, aerith["id"]))
+        portrait_url = asyncio.run(seed_portrait_for_aerith(sb, owner_id, aerith["id"]))
         if portrait_url:
             print(f"    portrait persisted at {portrait_url}")
         else:
@@ -497,16 +654,16 @@ def main() -> int:
 
     print("  → seeding bard songs (lyrics-only; no Suno key on file)…")
     first_lore_id = lore_rows[0]["id"] if lore_rows else None
-    seed_songs(sb, demo_id, aerith["id"], first_lore_id)
-    print("    2 songs hung above the bar")
+    seed_songs(sb, owner_id, aerith["id"], party_ids[0], first_lore_id)
+    print("    3 songs (feat ready, party pending, lore ready) hung above the bar")
 
     print()
-    print("Demo ready. Sign in to the web app with either:")
-    print(f"  • {DEMO_EMAIL}  /  {DEMO_PASSWORD}")
-    print(f"  • {FRIEND_EMAIL}  /  {FRIEND_PASSWORD}  (the friend)")
+    print("Demo ready. Sign in to the web app:")
+    print(f"  • {owner_signin}")
     print()
-    print("Every room shows seeded data. The Magic Mirror's 'set as active'")
-    print("button will still 500 until Supabase migration 0007 is applied.")
+    print("Notice Board should show: 1 friend, 1 incoming invite, 1 outgoing")
+    print("request, 2 active parties. Bard library shows 3 songs across all")
+    print("three scopes. Round Table shows 5 heroes; Mirror has Aerith painted.")
     return 0
 
 

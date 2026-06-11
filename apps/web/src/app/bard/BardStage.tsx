@@ -310,7 +310,12 @@ export function BardStage() {
           ) : (
             <ul className="space-y-3">
               {library.slice(0, 12).map((s) => (
-                <SongRow key={s.id} song={s} />
+                <SongRow
+                  key={s.id}
+                  song={s}
+                  isActive={latest?.id === s.id}
+                  onSelect={() => setLatest(s)}
+                />
               ))}
             </ul>
           )}
@@ -401,32 +406,55 @@ function songStatusChip(status: string): {
   return { tone: "muted", label: "still singing…" };
 }
 
-function SongRow({ song }: { song: SongDTO }) {
+function SongRow({
+  song,
+  isActive,
+  onSelect,
+}: {
+  song: SongDTO;
+  isActive?: boolean;
+  onSelect?: () => void;
+}) {
   const statusChip = songStatusChip(song.status);
+  const selectable = !!onSelect;
   return (
-    <li className="rounded-lg border border-tavern-stone/30 bg-tavern-night/50 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Chip tone="default">{song.scope}</Chip>
-          <Chip tone={statusChip.tone}>{statusChip.label}</Chip>
-          <span className="truncate text-sm text-tavern-parchment/80">
-            {song.prompt}
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={!selectable}
+        aria-pressed={isActive ?? undefined}
+        className={`w-full rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold ${
+          isActive
+            ? "border-tavern-ale bg-tavern-ale/15"
+            : "border-tavern-stone/30 bg-tavern-night/50 hover:border-tavern-ale/60"
+        } ${selectable ? "cursor-pointer" : "cursor-default"}`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Chip tone="default">{song.scope}</Chip>
+            <Chip tone={statusChip.tone}>{statusChip.label}</Chip>
+            <span className="truncate text-sm text-tavern-parchment/80">
+              {song.prompt}
+            </span>
+          </div>
+          <span className="shrink-0 text-[0.6rem] uppercase tracking-[0.2em] text-tavern-parchment/55">
+            {new Date(song.created_at).toLocaleDateString()}
           </span>
         </div>
-        <span className="text-[0.6rem] uppercase tracking-[0.2em] text-tavern-parchment/55">
-          {new Date(song.created_at).toLocaleDateString()}
-        </span>
-      </div>
-      {song.audio_url && (
-        <audio
-          controls
-          src={song.audio_url}
-          className="mt-2 w-full"
-          preload="none"
-        >
-          Your browser does not play sound.
-        </audio>
-      )}
+        {song.audio_url && (
+          <audio
+            controls
+            src={song.audio_url}
+            className="mt-2 w-full"
+            preload="none"
+            // Don't bubble play/pause clicks into the row's onSelect.
+            onClick={(e) => e.stopPropagation()}
+          >
+            Your browser does not play sound.
+          </audio>
+        )}
+      </button>
     </li>
   );
 }

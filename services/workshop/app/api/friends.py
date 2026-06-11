@@ -43,10 +43,20 @@ class FriendDTO(BaseModel):
 
 
 def _emails_for(db, ids: list[str]) -> dict[str, str]:
+    """Resolve user ids to emails via the SECURITY DEFINER RPC.
+
+    Defensive against PostgREST schema-cache hiccups (see parties.py
+    for the longer note). Emails are non-critical enrichment; falling
+    back to ``{}`` means the UI shows the uuid instead of the email
+    but the endpoint still returns.
+    """
     if not ids:
         return {}
-    res = db.rpc("lookup_users_by_ids", {"p_ids": ids}).execute()
-    return {row["id"]: row["email"] for row in (res.data or [])}
+    try:
+        res = db.rpc("lookup_users_by_ids", {"p_ids": ids}).execute()
+        return {row["id"]: row["email"] for row in (res.data or [])}
+    except Exception:
+        return {}
 
 
 @router.get("", response_model=list[FriendDTO])

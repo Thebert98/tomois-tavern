@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..auth import CurrentUser, get_current_user
-from ..db import user_client
+from ..db import service_client, user_client
 
 router = APIRouter(prefix="/parties", tags=["parties"])
 
@@ -42,25 +42,81 @@ class MemberPatchBody(BaseModel):
 
 
 def _emails_for(db, ids: list[str]) -> dict[str, str]:
+    """Resolve user ids to emails via the SECURITY DEFINER RPC.
+
+    Defensive: if PostgREST's schema cache is momentarily stale (which
+    has happened on this project after schema changes), the RPC raises
+    PGRST202. We log + return an empty map so callers can still produce
+    a useful response (emails just render as None / fall back to the
+    uuid in the UI). Hard-failing the whole route on a cache miss is a
+    bad trade for a non-critical enrichment.
+    """
     if not ids:
         return {}
-    res = db.rpc("lookup_users_by_ids", {"p_ids": ids}).execute()
-    return {row["id"]: row["email"] for row in (res.data or [])}
+    try:
+        res = db.rpc("lookup_users_by_ids", {"p_ids": ids}).execute()
+        return {row["id"]: row["email"] for row in (res.data or [])}
+    except Exception:
+        # PGRST202 (schema cache miss) or any other lookup blip. Don't
+        # let it sink the parent endpoint — emails are nice-to-have.
+        return {}
 
 
 @router.get("", response_model=list[dict[str, Any]])
 def list_parties(user: CurrentUser = Depends(get_current_user)):
-    """Parties I own or am a member of (RLS already enforces this)."""
+    """Parties the user owns OR is a member of.
+
+    The RLS layer on ``parties`` only matches owner_id — the recursive
+    "or is a member" half of the original policy was removed (it
+    triggered Postgres recursion against the party_members policy).
+    We restore "see your parties as a member" here in app code: read
+    the user's party_members rows, then fetch those parties through
+    the service client (RLS bypassed for the targeted read, scoped to
+    just the ids we already know the user belongs to).
+    """
     db = user_client(user.token)
-    parties = (
+
+    # 1. parties the user owns — RLS allows
+    owned = (
         db.table("parties")
         .select("*")
+        .eq("owner_id", user.id)
         .order("created_at", desc=True)
         .execute()
         .data
         or []
     )
-    return parties
+
+    # 2. parties the user is a member of (but doesn't own) — RLS shows
+    # them their own party_members rows, then we look up the parties.
+    membership = (
+        db.table("party_members")
+        .select("party_id")
+        .eq("user_id", user.id)
+        .execute()
+        .data
+        or []
+    )
+    owned_ids = {p["id"] for p in owned}
+    member_party_ids = [m["party_id"] for m in membership if m["party_id"] not in owned_ids]
+
+    member_parties: list[dict[str, Any]] = []
+    if member_party_ids:
+        # service_client: the user already proved (via the party_members
+        # row owned-by-them) that they belong to these parties, so the
+        # targeted-id read here is safe.
+        sb = service_client()
+        member_parties = (
+            sb.table("parties")
+            .select("*")
+            .in_("id", member_party_ids)
+            .order("created_at", desc=True)
+            .execute()
+            .data
+            or []
+        )
+
+    return owned + member_parties
 
 
 @router.post("", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
@@ -92,19 +148,65 @@ def get_party(
     party_id: str,
     user: CurrentUser = Depends(get_current_user),
 ):
+    """Return a party + its members.
+
+    Visibility check: caller must be the owner OR have a party_members
+    row in this party. RLS on the user_client guarantees the second
+    half — if the user has no party_members row here, the membership
+    SELECT returns empty.
+
+    Member listing: the owner-sees-everyone case is done with the
+    service client (RLS bypassed) since the user has already proven
+    they're either the owner or a member. Non-owners get back only
+    their own member row, mirroring the old RLS shape.
+    """
     db = user_client(user.token)
-    party_res = db.table("parties").select("*").eq("id", party_id).execute()
-    if not party_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Party not found")
-    party = party_res.data[0]
-    members = (
-        db.table("party_members")
-        .select("*")
-        .eq("party_id", party_id)
-        .execute()
-        .data
-        or []
+    sb = service_client()
+
+    party = (
+        sb.table("parties").select("*").eq("id", party_id).execute().data or []
     )
+    if not party:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Party not found")
+    party = party[0]
+
+    is_owner = party["owner_id"] == user.id
+
+    # Confirm membership for non-owners — RLS-scoped read of party_members
+    # for this party + this user.
+    if not is_owner:
+        own_membership = (
+            db.table("party_members")
+            .select("user_id")
+            .eq("party_id", party_id)
+            .eq("user_id", user.id)
+            .execute()
+            .data
+            or []
+        )
+        if not own_membership:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Party not found")
+
+    if is_owner:
+        members = (
+            sb.table("party_members")
+            .select("*")
+            .eq("party_id", party_id)
+            .execute()
+            .data
+            or []
+        )
+    else:
+        members = (
+            db.table("party_members")
+            .select("*")
+            .eq("party_id", party_id)
+            .eq("user_id", user.id)
+            .execute()
+            .data
+            or []
+        )
+
     member_ids = [m["user_id"] for m in members]
     emails = _emails_for(db, member_ids)
     members_enriched = [

@@ -135,9 +135,13 @@ def create_party(
     body: PartyCreateBody,
     user: CurrentUser = Depends(get_current_user),
 ):
-    db = user_client(user.token)
+    # Use service_client for both writes — the user_client writes against
+    # parties + party_members trip the cached-plan recursion this file
+    # routes around everywhere else. user.id is verified by the auth
+    # dependency, so the explicit owner_id/user_id assignments are safe.
+    sb = service_client()
     res = (
-        db.table("parties")
+        sb.table("parties")
         .insert({"owner_id": user.id, "name": body.name})
         .execute()
     )
@@ -148,7 +152,7 @@ def create_party(
         )
     party = res.data[0]
     # Auto-add the owner as a member so they always show up in the roster.
-    db.table("party_members").insert(
+    sb.table("party_members").insert(
         {"party_id": party["id"], "user_id": user.id, "role": "leader"}
     ).execute()
     return party
@@ -219,23 +223,23 @@ def get_party(
     member_ids = [m["user_id"] for m in members]
     emails = _emails_for(sb, member_ids)
 
-    # Enrich with the seated character's name + active portrait so the
-    # Notice Board can render heroes by who they are, not who their
-    # auth account is.
+    # Enrich with the seated character's name, a short race/class/level
+    # summary line, and active portrait. The Notice Board's redesigned
+    # party view renders heroes — not their auth accounts.
     char_ids = [m["character_id"] for m in members if m.get("character_id")]
-    char_name_by_id: dict[str, str] = {}
+    char_meta_by_id: dict[str, dict[str, Any]] = {}
     portrait_by_char: dict[str, str] = {}
     if char_ids:
         try:
             chars = (
                 sb.table("characters")
-                .select("id,name")
+                .select("id,name,sheet")
                 .in_("id", char_ids)
                 .execute()
                 .data
                 or []
             )
-            char_name_by_id = {c["id"]: c.get("name") for c in chars}
+            char_meta_by_id = {c["id"]: c for c in chars}
         except Exception:
             pass
         try:
@@ -254,15 +258,39 @@ def get_party(
         except Exception:
             pass
 
-    members_enriched = [
-        {
-            **m,
-            "email": emails.get(m["user_id"]),
-            "character_name": char_name_by_id.get(m.get("character_id") or ""),
-            "portrait_url": portrait_by_char.get(m.get("character_id") or ""),
-        }
-        for m in members
-    ]
+    def _summary_for(sheet: dict[str, Any] | None) -> str | None:
+        """Compose 'Race · Class · L#' from a ReRoll sheet, gracefully
+        skipping fields the sheet hasn't filled out."""
+        if not isinstance(sheet, dict):
+            return None
+        parts: list[str] = []
+        for key in ("race", "char_class"):
+            v = sheet.get(key)
+            if isinstance(v, dict):
+                v = v.get("value")
+            if isinstance(v, str) and v.strip():
+                parts.append(v.strip())
+        lvl = sheet.get("level")
+        if isinstance(lvl, dict):
+            lvl = lvl.get("value")
+        if isinstance(lvl, (int, str)) and str(lvl).strip() not in ("", "0"):
+            parts.append(f"L{lvl}")
+        return " · ".join(parts) or None
+
+    members_enriched = []
+    for m in members:
+        cid = m.get("character_id") or ""
+        char = char_meta_by_id.get(cid) or {}
+        members_enriched.append(
+            {
+                **m,
+                "email": emails.get(m["user_id"]),
+                "character_name": char.get("name"),
+                "character_summary": _summary_for(char.get("sheet")),
+                "portrait_url": portrait_by_char.get(cid),
+            }
+        )
+
     return {**party, "members": members_enriched}
 
 
@@ -387,17 +415,14 @@ def patch_member(
 ):
     """Edit a party_member row.
 
-    Two authz cases:
-      * member editing their own row (character_id) → user_client + RLS
-      * owner editing someone else's row (role or character_id) →
-        verify ownership via the parties table, then service_client
-        for the write (post-flat-RLS, an owner is not the row's user_id
-        and RLS wouldn't permit the write).
-
-    A role change always requires the owner — even on the caller's own
-    row — to prevent self-promotion.
+    All reads + writes go through service_client. The user_client path
+    was hitting the cached-recursive-plan trap on party_members that
+    the rest of this file already routes around. Authz is enforced
+    explicitly in app code: only the owner may set role; non-owners
+    can only edit their own row's character_id; role can never be
+    set on yourself (no self-promotion).
     """
-    db = user_client(user.token)
+    sb = service_client()
     patch: dict[str, Any] = {}
     if body.character_id is not None:
         patch["character_id"] = body.character_id
@@ -405,19 +430,14 @@ def patch_member(
 
     is_self = user_id == user.id
 
-    # If role is being touched, verify owner. Same if caller isn't the
-    # row's user (only the owner can edit someone else's row at all).
+    # Role changes require the owner — always, including on yourself.
+    # Editing someone else's row also requires the owner.
     needs_owner = role_requested or not is_self
     if needs_owner:
-        party = (
-            db.table("parties")
-            .select("owner_id")
-            .eq("id", party_id)
-            .execute()
-        )
-        if not party.data:
+        party = sb.table("parties").select("owner_id").eq("id", party_id).execute().data
+        if not party:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Party not found")
-        if party.data[0]["owner_id"] != user.id:
+        if party[0]["owner_id"] != user.id:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
                 "Only the leader may make that change.",
@@ -430,9 +450,8 @@ def patch_member(
             status.HTTP_400_BAD_REQUEST, "Nothing to update."
         )
 
-    writer = service_client() if needs_owner else db
     updated = (
-        writer.table("party_members")
+        sb.table("party_members")
         .update(patch)
         .eq("party_id", party_id)
         .eq("user_id", user_id)
@@ -453,19 +472,19 @@ def remove_member(
 ):
     """Remove a member from a party.
 
-    Two cases:
-      * member leaving (user_id == auth.uid()) — user_client + RLS works
-      * owner kicking someone else — verify ownership, then service_client
+    Always goes through service_client to dodge the party_members
+    recursive-plan trap. Authz enforced in code:
+      * member leaving themselves: allowed
+      * owner kicking someone else: allowed
+      * anyone else: 403
 
-    Returns 404 if the delete affects zero rows so callers can tell
-    whether the action took effect (same pattern as every other
-    endpoint that returns 204 on success).
+    Returns 404 when the delete affects zero rows.
     """
-    db = user_client(user.token)
+    sb = service_client()
     if user_id != user.id:
         # Owner-kicks-someone-else path.
         party = (
-            db.table("parties")
+            sb.table("parties")
             .select("owner_id")
             .eq("id", party_id)
             .execute()
@@ -476,13 +495,9 @@ def remove_member(
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, "Only the leader may remove that member."
             )
-        writer = service_client()
-    else:
-        # User leaving on their own.
-        writer = db
 
     res = (
-        writer.table("party_members")
+        sb.table("party_members")
         .delete()
         .eq("party_id", party_id)
         .eq("user_id", user_id)

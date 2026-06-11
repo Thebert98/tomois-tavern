@@ -239,6 +239,8 @@ export interface PartyMemberDTO {
   email: string | null;
   /** The seated character's name, when one is assigned. Enriched server-side. */
   character_name: string | null;
+  /** Race · Class · L#, distilled from the sheet. */
+  character_summary: string | null;
   /** That character's active portrait, when one exists. */
   portrait_url: string | null;
 }

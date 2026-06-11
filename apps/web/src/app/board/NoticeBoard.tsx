@@ -606,60 +606,79 @@ function PartyDetail({
         )}
       </div>
 
-      <ul className="divide-y divide-tavern-oak/60">
+      <ul className="grid gap-3 sm:grid-cols-2">
         {party.members.map((m) => {
           const yours = m.user_id === user?.id;
           const heroName = m.character_name?.trim();
-          const labelForUnseated = m.email ?? m.user_id;
-          // The avatar pulls initials from whatever name we display, so
-          // it matches the hero (or the email if no hero is seated).
-          const displayName = heroName ?? labelForUnseated;
+          const unseated = !heroName;
           return (
             <li
               key={m.user_id}
-              className="flex flex-wrap items-center gap-3 py-2"
+              className={`relative flex items-center gap-4 rounded-xl border bg-tavern-oak/30 p-3 transition-colors ${
+                yours
+                  ? "border-tavern-gold/55 shadow-[inset_0_0_18px_rgba(212,175,55,0.12)]"
+                  : "border-tavern-stone/30"
+              }`}
             >
-              {m.portrait_url ? (
-                <img
-                  src={m.portrait_url}
-                  alt={`${heroName ?? "hero"} portrait`}
-                  className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-tavern-gold/40"
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : (
-                <Avatar size="sm" name={displayName} />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-tavern-parchment">
+              {/* Portrait — 3:4 thumbnail; gold ring when it's yours */}
+              <div
+                className={`relative h-20 w-16 shrink-0 overflow-hidden rounded-lg ${
+                  yours ? "ring-2 ring-tavern-gold/70" : "ring-1 ring-tavern-stone/40"
+                }`}
+              >
+                {m.portrait_url ? (
+                  <img
+                    src={m.portrait_url}
+                    alt={`${heroName ?? "hero"} portrait`}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-tavern-night text-[0.6rem] uppercase tracking-[0.25em] text-tavern-stone">
+                    {unseated ? "vacant" : "no vision"}
+                  </div>
+                )}
+              </div>
+
+              {/* Hero meta */}
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="truncate font-heading text-sm uppercase tracking-[0.15em] text-tavern-parchment">
                   {heroName ?? (
-                    <span className="italic text-tavern-parchment/55">
-                      (no hero seated)
+                    <span className="italic normal-case tracking-normal text-tavern-parchment/55">
+                      (seat awaits a hero)
                     </span>
                   )}
                 </div>
+                {m.character_summary && (
+                  <div className="truncate text-[0.65rem] italic text-tavern-parchment/65">
+                    {m.character_summary}
+                  </div>
+                )}
+                {yours && (
+                  <select
+                    aria-label="Pick your hero for this party"
+                    value={m.character_id ?? ""}
+                    onChange={(e) => assignCharacter(m.user_id, e.target.value)}
+                    className="mt-1 w-full rounded border border-tavern-stone/35 bg-tavern-night px-2 py-1 text-xs text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+                  >
+                    <option value="">no hero</option>
+                    {characters.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name || "Untitled"}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-              {yours && (
-                <select
-                  aria-label="Pick your hero for this party"
-                  value={m.character_id ?? ""}
-                  onChange={(e) => assignCharacter(m.user_id, e.target.value)}
-                  className="rounded border border-tavern-stone/35 bg-tavern-night px-2 py-1 text-xs text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
-                >
-                  <option value="">no hero</option>
-                  {characters.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name || "Untitled"}
-                    </option>
-                  ))}
-                </select>
-              )}
+
+              {/* Leave / kick */}
               {(isLeader || yours) && (
                 <button
                   type="button"
                   onClick={() => removeMember(m.user_id)}
                   aria-label={yours ? "Leave party" : "Remove member"}
-                  className="rounded p-1.5 text-tavern-parchment/55 hover:bg-tavern-blood/30 hover:text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-blood"
+                  className="absolute right-2 top-2 rounded p-1 text-tavern-parchment/45 hover:bg-tavern-blood/30 hover:text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-blood"
                 >
                   <X className="h-3 w-3" />
                 </button>

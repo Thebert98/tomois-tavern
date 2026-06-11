@@ -1,0 +1,27 @@
+# Heavy / generated directories Vercel doesn't need in the upload.
+# The first deploy attempt tried to ship a 1.2 GB tarball including
+# every workspace's node_modules; with these excluded the upload drops
+# to the source tree alone (Vercel reinstalls + builds remotely).
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+.turbo
+**/.turbo
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Python — the workshop service deploys to Railway, not Vercel.
+services
+__pycache__
+**/__pycache__
+.venv
+**/.venv
+
+# Local-only
+.env
+.env.local
+.env.*.local
+.vercel

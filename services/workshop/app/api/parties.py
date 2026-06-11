@@ -218,8 +218,50 @@ def get_party(
 
     member_ids = [m["user_id"] for m in members]
     emails = _emails_for(sb, member_ids)
+
+    # Enrich with the seated character's name + active portrait so the
+    # Notice Board can render heroes by who they are, not who their
+    # auth account is.
+    char_ids = [m["character_id"] for m in members if m.get("character_id")]
+    char_name_by_id: dict[str, str] = {}
+    portrait_by_char: dict[str, str] = {}
+    if char_ids:
+        try:
+            chars = (
+                sb.table("characters")
+                .select("id,name")
+                .in_("id", char_ids)
+                .execute()
+                .data
+                or []
+            )
+            char_name_by_id = {c["id"]: c.get("name") for c in chars}
+        except Exception:
+            pass
+        try:
+            ports = (
+                sb.table("portraits")
+                .select("character_id,image_url")
+                .in_("character_id", char_ids)
+                .eq("is_current", True)
+                .execute()
+                .data
+                or []
+            )
+            portrait_by_char = {
+                p["character_id"]: p["image_url"] for p in ports if p.get("image_url")
+            }
+        except Exception:
+            pass
+
     members_enriched = [
-        {**m, "email": emails.get(m["user_id"])} for m in members
+        {
+            **m,
+            "email": emails.get(m["user_id"]),
+            "character_name": char_name_by_id.get(m.get("character_id") or ""),
+            "portrait_url": portrait_by_char.get(m.get("character_id") or ""),
+        }
+        for m in members
     ]
     return {**party, "members": members_enriched}
 

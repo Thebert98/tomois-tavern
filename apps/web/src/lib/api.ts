@@ -237,6 +237,10 @@ export interface PartyMemberDTO {
   character_id: string | null;
   role: string | null;
   email: string | null;
+  /** The seated character's name, when one is assigned. Enriched server-side. */
+  character_name: string | null;
+  /** That character's active portrait, when one exists. */
+  portrait_url: string | null;
 }
 export interface PartyDetailDTO extends PartyDTO {
   members: PartyMemberDTO[];

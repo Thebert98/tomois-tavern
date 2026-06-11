@@ -609,26 +609,37 @@ function PartyDetail({
       <ul className="divide-y divide-tavern-oak/60">
         {party.members.map((m) => {
           const yours = m.user_id === user?.id;
+          const heroName = m.character_name?.trim();
+          const labelForUnseated = m.email ?? m.user_id;
+          // The avatar pulls initials from whatever name we display, so
+          // it matches the hero (or the email if no hero is seated).
+          const displayName = heroName ?? labelForUnseated;
           return (
             <li
               key={m.user_id}
-              className="flex flex-wrap items-center gap-2 py-2"
+              className="flex flex-wrap items-center gap-3 py-2"
             >
-              <Avatar
-                size="sm"
-                name={m.email ?? m.user_id}
-              />
+              {m.portrait_url ? (
+                <img
+                  src={m.portrait_url}
+                  alt={`${heroName ?? "hero"} portrait`}
+                  className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-tavern-gold/40"
+                  loading="lazy"
+                  decoding="async"
+                />
+              ) : (
+                <Avatar size="sm" name={displayName} />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm text-tavern-parchment">
-                  {m.email ?? m.user_id}
+                  {heroName ?? (
+                    <span className="italic text-tavern-parchment/55">
+                      (no hero seated)
+                    </span>
+                  )}
                 </div>
-                {m.role && (
-                  <div className="text-[0.6rem] uppercase tracking-[0.25em] text-tavern-gold/70">
-                    {m.role}
-                  </div>
-                )}
               </div>
-              {yours ? (
+              {yours && (
                 <select
                   aria-label="Pick your hero for this party"
                   value={m.character_id ?? ""}
@@ -642,10 +653,6 @@ function PartyDetail({
                     </option>
                   ))}
                 </select>
-              ) : m.character_id ? (
-                <Chip tone="default">hero seated</Chip>
-              ) : (
-                <Chip tone="muted">no hero</Chip>
               )}
               {(isLeader || yours) && (
                 <button

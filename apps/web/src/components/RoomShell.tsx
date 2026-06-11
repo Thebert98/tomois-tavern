@@ -14,7 +14,7 @@ export function RoomShell({ title, subtitle, children }: RoomShellProps) {
       <div className="mx-auto max-w-5xl">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-sm uppercase tracking-[0.3em] text-tavern-parchment/60 transition-colors hover:text-tavern-gold"
+          className="inline-flex items-center gap-2 rounded text-sm uppercase tracking-[0.3em] text-tavern-parchment/60 transition-colors hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold focus-visible:ring-offset-2 focus-visible:ring-offset-tavern-night"
         >
           <ArrowLeft className="h-4 w-4" />
           back to the tavern

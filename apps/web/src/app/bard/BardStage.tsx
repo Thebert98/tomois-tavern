@@ -447,6 +447,7 @@ function SongRow({
             src={song.audio_url}
             className="mt-2 w-full"
             preload="none"
+            aria-label={`Listen to the song about ${song.prompt}`}
             // Don't bubble play/pause clicks into the row's onSelect.
             onClick={(e) => e.stopPropagation()}
           >

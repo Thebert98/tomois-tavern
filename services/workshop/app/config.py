@@ -18,7 +18,11 @@ class Settings(BaseSettings):
     portrait_model: str = "fal-ai/flux-pro/v1.1-ultra"
     portrait_bucket: str = "portraits"
 
-    # Tavern Bard
+    # Tavern Bard — text-to-song.
+    # Replicate's MiniMax Music is the default provider (real Replicate
+    # API + real sung vocals). The Suno reseller path is kept as a
+    # fallback for deploys that already had the SUNO_API_KEY set.
+    replicate_api_token: str = ""
     suno_api_key: str = ""
     suno_base_url: str = "https://api.sunoapi.com/api/v1"
     song_bucket: str = "bard-songs"

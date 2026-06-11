@@ -17,7 +17,15 @@ class TestPatchMember:
         """Non-role patches are unrestricted by W6 — RLS is the floor and
         a member is allowed to swap which of their own characters they're
         playing in this party.
+
+        The route now also verifies the target character belongs to the
+        user being patched, so the fake has to return a matching row.
         """
+        fake_store.set_table_response(
+            "characters",
+            "select",
+            [{"user_id": _TEST_USER_ID}],
+        )
         fake_store.set_table_response(
             "party_members",
             "update",
@@ -28,6 +36,23 @@ class TestPatchMember:
             json={"character_id": "C2"},
         )
         assert res.status_code == 200, res.text
+
+    def test_member_cannot_set_someone_elses_character(self, client: TestClient, fake_store: FakeStore) -> None:
+        """Audit caught: a member could assign another user's character
+        to their own row. The character ownership check now rejects it
+        with 403 before the update fires."""
+        # Character belongs to a DIFFERENT user.
+        fake_store.set_table_response(
+            "characters",
+            "select",
+            [{"user_id": "some-other-user"}],
+        )
+        res = client.patch(
+            f"/parties/P1/members/{_TEST_USER_ID}",
+            json={"character_id": "C-belongs-elsewhere"},
+        )
+        assert res.status_code == 403
+        assert "doesn't belong" in res.json()["detail"].lower()
 
     def test_non_owner_cannot_set_role(self, client: TestClient, fake_store: FakeStore) -> None:
         """W6 — a member calling PATCH .../members/self {role: "leader"}

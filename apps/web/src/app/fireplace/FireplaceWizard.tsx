@@ -400,7 +400,10 @@ export function FireplaceWizard() {
 
       <p className="mt-4 text-center text-xs italic text-tavern-parchment/45">
         Existing heroes live at the{" "}
-        <a href="/table" className="text-tavern-gold/80 hover:text-tavern-gold">
+        <a
+          href="/table"
+          className="rounded text-tavern-gold/80 hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold focus-visible:ring-offset-2 focus-visible:ring-offset-tavern-night"
+        >
           Round Table
         </a>
         .

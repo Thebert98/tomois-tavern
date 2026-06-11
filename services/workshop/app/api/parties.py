@@ -421,11 +421,33 @@ def patch_member(
     explicitly in app code: only the owner may set role; non-owners
     can only edit their own row's character_id; role can never be
     set on yourself (no self-promotion).
+
+    A ``character_id`` value must belong to the user being patched —
+    auditing caught a hole where a member could assign someone else's
+    character to their own row (the characters table still hides it
+    from reads via RLS, but the integrity of the manifest was broken).
     """
     sb = service_client()
     patch: dict[str, Any] = {}
     if body.character_id is not None:
-        patch["character_id"] = body.character_id
+        # Verify the character belongs to the user we're patching.
+        # Empty string clears the assignment, which is fine.
+        if body.character_id.strip():
+            char = (
+                sb.table("characters")
+                .select("user_id")
+                .eq("id", body.character_id)
+                .execute()
+                .data
+            )
+            if not char or char[0]["user_id"] != user_id:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "That hero doesn't belong to you.",
+                )
+            patch["character_id"] = body.character_id
+        else:
+            patch["character_id"] = None
     role_requested = body.role is not None
 
     is_self = user_id == user.id

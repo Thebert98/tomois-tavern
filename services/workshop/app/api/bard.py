@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from ..auth import CurrentUser, get_current_user
 from ..db import user_client
 from ..providers import lyrics as lyrics_provider
-from ..providers import suno as suno_provider
+from ..providers import music as music_provider
 from ..providers import storage
 from ..rate_limit import limiter, song_limit
 
@@ -78,17 +78,26 @@ async def create_song(
             source_id=body.source_id,
             user_prompt=body.prompt,
         )
-        # 2. Audio from Suno (reseller).
-        audio_result = await suno_provider.generate_song(
+        # 2. Audio from the music provider — Replicate MiniMax Music by
+        # default, Suno reseller as a legacy fallback.
+        audio_result = await music_provider.generate_song(
             lyrics=lyrics_text,
             genre=body.genre,
             title=f"Bard's song — {body.scope}",
         )
     except Exception as exc:
         db.table("bard_songs").update({"status": "failed"}).eq("id", song_id).execute()
+        # Tavern-flavoured 502 for the common provider failures so the
+        # frontend's toast reads in voice.
+        detail = "The bard's lute is unstrung."
+        msg = str(exc)
+        if "REPLICATE_API_TOKEN" in msg or "SUNO_API_KEY" in msg or "No music provider" in msg:
+            detail = "The bard's lute is unstrung — no music provider is configured."
+        elif "timed out" in msg.lower():
+            detail = "The bard tires before the last verse — try again."
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Song generation failed: {exc}",
+            detail=detail,
         ) from exc
 
     public_url = await storage.persist_audio(

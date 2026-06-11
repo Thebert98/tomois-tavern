@@ -230,9 +230,17 @@ def patch_party(
     body: PartyPatchBody,
     user: CurrentUser = Depends(get_current_user),
 ):
-    db = user_client(user.token)
+    # Same recursion-cache trap that list_parties hit — user_client UPDATE
+    # against parties trips 42P17 even though the policy is flat. Verify
+    # ownership explicitly, then write via service_client.
+    sb = service_client()
+    party = sb.table("parties").select("owner_id").eq("id", party_id).execute().data
+    if not party:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Party not found")
+    if party[0]["owner_id"] != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the leader may rename the party.")
     updated = (
-        db.table("parties")
+        sb.table("parties")
         .update({"name": body.name})
         .eq("id", party_id)
         .execute()
@@ -247,8 +255,14 @@ def delete_party(
     party_id: str,
     user: CurrentUser = Depends(get_current_user),
 ):
-    db = user_client(user.token)
-    db.table("parties").delete().eq("id", party_id).execute()
+    # Same as patch_party — verify ownership, write via service_client.
+    sb = service_client()
+    party = sb.table("parties").select("owner_id").eq("id", party_id).execute().data
+    if not party:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Party not found")
+    if party[0]["owner_id"] != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the leader may disband the party.")
+    sb.table("parties").delete().eq("id", party_id).execute()
     return None
 
 

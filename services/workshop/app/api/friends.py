@@ -42,6 +42,30 @@ class FriendDTO(BaseModel):
     created_at: Optional[str]
 
 
+def _find_user_id_by_email(email: str) -> str | None:
+    """Look up a user id by email via the gotrue admin endpoint.
+
+    Pagination-aware (defaults: 200/page, hard-stop at 20 pages = 4k
+    users) so it can scale beyond the first page without spinning
+    forever. The PostgREST lookup_user_by_email RPC stays broken in
+    this project's schema cache, so this is the only path that works.
+    """
+    target = email.strip().lower()
+    sb = service_client()
+    for page in range(1, 21):
+        try:
+            res = sb.auth.admin.list_users(page=page, per_page=200)
+        except Exception:
+            return None
+        users = getattr(res, "users", None) or res
+        if not users:
+            return None
+        for u in users:
+            if (getattr(u, "email", "") or "").lower() == target:
+                return u.id
+    return None
+
+
 def _emails_for(db, ids: list[str]) -> dict[str, str]:
     """Resolve user ids to emails via the gotrue admin endpoint.
 
@@ -98,8 +122,12 @@ def invite_friend(
     user: CurrentUser = Depends(get_current_user),
 ):
     db = user_client(user.token)
-    lookup = db.rpc("lookup_user_by_email", {"p_email": body.email}).execute()
-    addressee_id = lookup.data if isinstance(lookup.data, str) else None
+
+    # Resolve email → user id via the gotrue admin API. We used to call
+    # the lookup_user_by_email RPC, but this project's PostgREST schema
+    # cache is permanently stuck on PGRST202 for that function (see the
+    # _emails_for note for context). The admin endpoint bypasses PGRST.
+    addressee_id = _find_user_id_by_email(body.email)
     if not addressee_id:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,

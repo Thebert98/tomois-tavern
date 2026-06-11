@@ -9,6 +9,14 @@ jobs:
   web:
     name: web — type-check + build + test
     runs-on: ubuntu-latest
+    env:
+      # The Next.js build pre-renders pages, which loads lib/env.ts and
+      # throws if these aren't set. Dummies satisfy the gate; nothing
+      # in the static output is actually authenticated.
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+      NEXT_PUBLIC_REROLL_BASE_URL: https://example.com
+      NEXT_PUBLIC_WORKSHOP_BASE_URL: https://example.com
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Music, Sparkles, AlertTriangle, Disc3, BookOpen, Plus } from "lucide-react";
 import {
   Button,
@@ -44,10 +46,20 @@ const SCOPES: { key: Scope; label: string; flavor: string }[] = [
   },
 ];
 
+function _initialScope(raw: string | null): Scope {
+  return raw === "party" || raw === "lore" || raw === "feat" ? raw : "feat";
+}
+
 export function BardStage() {
   const { toast } = useToast();
-  const [scope, setScope] = useState<Scope>("feat");
-  const [sourceId, setSourceId] = useState<string>("");
+  const searchParams = useSearchParams();
+  // Deep-link from PartyDetail / CharacterCard / NoticeBoard:
+  //   /bard?scope=party&source=<party_id>
+  //   /bard?scope=feat&source=<character_id>
+  const deepScope = _initialScope(searchParams?.get("scope") ?? null);
+  const deepSource = searchParams?.get("source") ?? "";
+  const [scope, setScope] = useState<Scope>(deepScope);
+  const [sourceId, setSourceId] = useState<string>(deepSource);
   const [genre, setGenre] = useState("medieval tavern folk");
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -74,10 +86,12 @@ export function BardStage() {
     });
   }, []);
 
-  // Reset source when scope changes.
+  // Reset source when scope changes — but only after the initial mount,
+  // so a deep-link with both ?scope= and ?source= survives the first render.
+  const initialMount = useMemo(() => ({ scope: deepScope }), [deepScope]);
   useEffect(() => {
-    setSourceId("");
-  }, [scope]);
+    if (scope !== initialMount.scope) setSourceId("");
+  }, [scope, initialMount]);
 
   const sources = useMemo(() => {
     if (scope === "feat") {
@@ -192,11 +206,31 @@ export function BardStage() {
           </Label>
           {sources.length === 0 ? (
             <p className="text-xs italic text-tavern-parchment/55">
-              {scope === "feat"
-                ? "No heroes yet — seat one at the Round Table."
-                : scope === "party"
-                  ? "No parties yet — found one at the Notice Board."
-                  : "No lore inked yet — forge a first piece below."}
+              {scope === "feat" ? (
+                <>
+                  No heroes yet —{" "}
+                  <Link
+                    href="/table"
+                    className="rounded text-tavern-gold/80 hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+                  >
+                    seat one at the Round Table
+                  </Link>
+                  .
+                </>
+              ) : scope === "party" ? (
+                <>
+                  No parties yet —{" "}
+                  <Link
+                    href="/board"
+                    className="rounded text-tavern-gold/80 hover:text-tavern-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-gold"
+                  >
+                    found one at the Notice Board
+                  </Link>
+                  .
+                </>
+              ) : (
+                "No lore inked yet — forge a first piece below."
+              )}
             </p>
           ) : (
             <select

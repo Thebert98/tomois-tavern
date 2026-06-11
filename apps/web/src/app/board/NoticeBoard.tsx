@@ -11,6 +11,7 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Music,
 } from "lucide-react";
 import {
   Avatar,
@@ -26,6 +27,7 @@ import {
   Skeleton,
   useToast,
 } from "@tomois/ui";
+import Link from "next/link";
 import { unfurl } from "@/lib/motion";
 import {
   friends,
@@ -592,6 +594,13 @@ function PartyDetail({
   return (
     <SignBoard title={party.name} subtitle={`${party.members.length} at the table`}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Link
+          href={`/bard?scope=party&source=${party.id}`}
+          className="inline-flex items-center gap-1 rounded-lg border border-tavern-ale/60 bg-tavern-ale/15 px-2.5 py-1 font-heading text-[0.65rem] uppercase tracking-[0.25em] text-tavern-ale transition-colors hover:bg-tavern-ale/30 hover:text-tavern-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tavern-ale"
+        >
+          <Music className="h-3 w-3" />
+          sing a ballad of this party
+        </Link>
         {isLeader && (
           <>
             <Button size="sm" variant="ghost" onClick={onRequestRename}>

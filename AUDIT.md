@@ -342,3 +342,97 @@ These came out of the frontend audit but weren't critical enough to block:
 CI: web (type-check + build + test) green at `27352232996`; workshop pytest green continuously since the bug fix.
 
 *Round 3 complete. Branch trail: `fable/post-seed-audit` (rollback marker) → `main`.*
+
+---
+
+## Round 4 — full system audit + Suno → Replicate (2026-06-11)
+
+User asked for a comprehensive sweep + research into the Suno API. Two
+parallel investigators (backend live-endpoint + frontend a11y/UX) plus
+focused research into music providers turned into a substantial round.
+
+### Suno replaced with Replicate MiniMax Music
+
+**Research finding.** Suno never published a first-party API to general
+accounts — every "Suno API" advertised online (`sunoapi.com`,
+`kie.ai`, `apipass.dev`, `crun.ai`) is an unofficial reseller that
+proxies Suno's web/PWA endpoints. They break whenever Suno updates,
+and pricing + reliability vary wildly. The previous workshop pointed
+at `sunoapi.com`.
+
+**Replacement.** Replicate's **MiniMax Music 2.6**. Real Replicate API,
+predictable pay-as-you-go pricing (~$0.05/song), real sung vocals,
+~25-second chunk latency, supports lyrics up to 3,500 chars +
+song-description style prompt. Stable HTTP contract — no SDK needed.
+
+**Implementation** (commit `*` — see git log).
+
+- `services/workshop/app/providers/music.py` — new unified provider.
+  `generate_song(lyrics, genre, title) → SongResult`. Reads
+  `REPLICATE_API_TOKEN` first; falls back to `SUNO_API_KEY` for any
+  deploy that still has it set; raises with a friendly message
+  otherwise.
+- Polls the Replicate prediction (2s interval, 180s ceiling), handles
+  starting/processing/succeeded/failed states, normalizes the output
+  shape (`output` can be a string, list, or dict).
+- `app/api/bard.py` imports the unified provider and translates
+  RuntimeError into tavern-flavoured 502s: *"The bard's lute is
+  unstrung — no music provider is configured."* / *"The bard tires
+  before the last verse — try again."*
+- `app/config.py` adds `REPLICATE_API_TOKEN`. `.env.example` updated
+  with the Replicate token first, Suno marked legacy.
+
+Verified live with neither key set:
+
+```
+POST /songs → 502 "The bard's lute is unstrung — no music provider is configured."
+```
+
+### Backend audit (live endpoint sweep) — fixed
+
+| Severity | Finding | Fix |
+|---|---|---|
+| **High** | `PATCH /parties/{id}/members/{user_id}` allowed setting `character_id` to a character the target user doesn't own — broke manifest integrity (RLS on `characters` hid the read, but the row was wrong) | Added ownership check + a new pytest case (`test_member_cannot_set_someone_elses_character`). 403 + tavern copy ("That hero doesn't belong to you.") |
+| Medium | Backend audit reported `DELETE /parties/{id}` 500 on nonexistent ID | Live re-test post-deploy confirms 404 with `{"detail":"Party not found"}` — code was already correct after the Round 3 refactor; the audit agent likely hit a pre-deploy state |
+| Low | Rate-limit response headers absent | Documented; slowapi default. Frontend audit's "no proactive backoff" item is real but tolerable — limits are friendly tavern messages, not silent 429s |
+
+### Frontend audit — fixed
+
+| Severity | Finding | Fix |
+|---|---|---|
+| **A11y** | `RoomShell` "back to the tavern" `<Link>` had only hover color, no focus ring | Added `focus-visible:ring-2 focus-visible:ring-tavern-gold` + offset |
+| **A11y** | Fireplace's inline "Round Table" link missing focus ring | Same fix |
+| **A11y** | BardStage `<audio>` element had no `aria-label` so screen readers heard "audio element" with no context | Added `aria-label={`Listen to the song about ${song.prompt}`}` |
+| **Voice** | Bard `<button>` row had impossible `disabled` branch + missing `aria-label` (Round 3 leftover) | Already cleaned in Round 3 final commit |
+
+### Feature improvements shipped
+
+- **Cross-room flow: Notice Board → Bard.** PartyDetail gains a "**sing a ballad of this party**" action that deep-links to `/bard?scope=party&source=<party_id>`. BardStage reads `?scope=` and `?source=` on mount; subsequent scope changes still reset the source, but the deep-link survives the first render.
+- **Empty source list → clickable cross-room.** "No heroes yet — *seat one at the Round Table*" and "No parties yet — *found one at the Notice Board*" are real `<Link>`s now instead of italic stubs. Teaches the cross-room flow.
+
+### Documented (not fixed — would need product decisions)
+
+1. **Lore CRUD UI** is solid but no edit/rename for existing lore entries — only create + delete. Add when a real use case shows up.
+2. **Notice Board Realtime.** Pending invites don't appear without refresh. Mirror already uses Realtime; pattern is portable but unstable on Vercel preview deploys (websockets + serverless can race). Documented for a later focused PR.
+3. **Mirror gallery hover-only buttons** — known mobile issue; the "set active" + delete glyphs appear on hover. Touch-only users have to long-press. Worth a 3-dot menu for v2.
+4. **PartyDetail member order.** Comes back insertion-ordered from the DB. Add `.order("joined_at")` if/when we revisit the read.
+5. **Suno reseller path** stays in the codebase as a legacy fallback. We don't recommend it but the env-var precedence means a deploy that already has `SUNO_API_KEY` set will keep working.
+
+### Round 4 scoreboard
+
+```
+PATCH /parties/{id}/members/{me} {character_id: <mine>}    200
+PATCH /parties/{id}/members/{me} {character_id: <not-mine>} 403 "That hero doesn't belong to you."
+DELETE /parties/<missing>                                   404 "Party not found"
+POST   /songs (no music provider configured)                502 "The bard's lute is unstrung…"
+PATCH  /portraits/<mine>/current                            200
+GET    every other read endpoint                            200 with enriched payloads
+```
+
+CI green continuously since Round 3 commit `135bbde`. pytest 23/23
+green after adding the new authz test case. Vercel + Railway both
+redeployed and serving.
+
+*Round 4 complete. Branch trail: `main` keeps moving forward; the
+`fable/post-seed-audit` branch remains the rollback marker for
+anything pre-Round-3.*
